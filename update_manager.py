@@ -161,7 +161,8 @@ class UpdateManager:
                                       "Neue Features:\n"
                                       "• Multi-Assignee System\n"
                                       "• Asteroiden-Animationen\n"
-                                      "• Automatische Updates\n\n"
+                                      "• Automatische Updates\n"
+                                      "• TESTTESTTEST\n\n"
                                       "Möchten Sie die Anwendung jetzt aktualisieren?")
             if result:
                 return self.update_application()
