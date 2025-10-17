@@ -105,9 +105,32 @@ class UpdateManager:
             return False
     
     def _update_via_git(self):
-        """Update über Git - Ursprüngliche einfache Logik."""
+        """Update über Git - Ursprüngliche Logik mit Konflikt-Lösung."""
         try:
-            # Einfacher Git pull wie in der ursprünglichen Version
+            # 1. Lösche problematische Dateien vor dem Pull
+            import os
+            import shutil
+            
+            # Lösche __pycache__ Verzeichnis komplett
+            if os.path.exists('__pycache__'):
+                shutil.rmtree('__pycache__', ignore_errors=True)
+                print("Gelöscht: __pycache__ Verzeichnis")
+            
+            # Lösche problematische Assets
+            problematic_files = [
+                'assets/glass_panel.png',
+                'assets/nebula_soft.png'
+            ]
+            
+            for file_path in problematic_files:
+                if os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                        print(f"Gelöscht: {file_path}")
+                    except:
+                        pass
+            
+            # 2. Einfacher Git pull wie in der ursprünglichen Version
             result = subprocess.run(['git', 'pull', 'origin', 'main'], 
                                  capture_output=True, text=True)
             
