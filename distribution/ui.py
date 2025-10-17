@@ -645,7 +645,7 @@ class BubbleCanvas(tk.Canvas):
 
         self.bind("<Configure>", lambda e: self.redraw())
         self.bind("<Motion>", self._on_mouse_move)
-        self.bind("<MouseWheel>", self._on_mouse_wheel)  # Mausrad für Landkarten-Zoom
+        # Mausrad-Zoom komplett entfernt
         self.bind("<Leave>", self._on_mouse_leave)
         
         # Pan-Funktionalität Events
@@ -1613,31 +1613,7 @@ class BubbleCanvas(tk.Canvas):
 
     def _on_mouse_leave(self, event): self._hide_tooltip()
     
-    def _on_mouse_wheel(self, event):
-        """Mausrad-Zoom nur für Landkarten-Modus."""
-        if self.zoom_mode == 'dynamic':
-            # Im dynamischen Modus: Mausrad deaktiviert, nur Slider
-            return
-            
-        # Nur für Landkarten-Modus: Zoom auf Mausposition
-        zoom_factor = 1.1 if event.delta > 0 else 0.9
-        new_zoom = self.zoom_level * zoom_factor
-        new_zoom = max(self.min_zoom, min(self.max_zoom, new_zoom))
-        
-        if new_zoom != self.zoom_level:
-            mouse_x = event.x
-            mouse_y = event.y
-            old_zoom = self.zoom_level
-            
-            self.scale("world", mouse_x, mouse_y, zoom_factor, zoom_factor)
-            self.zoom_level = new_zoom
-            
-            zoom_ratio = new_zoom / old_zoom
-            self.map_offset_x = mouse_x - (mouse_x - self.map_offset_x) * zoom_ratio
-            self.map_offset_y = mouse_y - (mouse_y - self.map_offset_y) * zoom_ratio
-            
-            self._adjust_styles_after_zoom()
-            self.configure(scrollregion=self.bbox("world"))
+    # Mausrad-Zoom komplett entfernt
     
     def _adjust_styles_after_zoom(self):
         """Passt Linienbreiten und Schriftgrößen nach dem Zoom an."""
@@ -1687,8 +1663,8 @@ class BubbleCanvas(tk.Canvas):
             pass
     
     def _on_pan_start(self, event):
-        """Startet Pan-Navigation wenn Leertaste gedrückt ist."""
-        if self.pan_mode:
+        """Startet Pan-Navigation nur im Landkarten-Modus."""
+        if self.pan_mode and self.zoom_mode == 'map':
             self.pan_start_x = event.x
             self.pan_start_y = event.y
             self.pan_start_offset_x = self.map_offset_x
@@ -1697,8 +1673,8 @@ class BubbleCanvas(tk.Canvas):
             self.config(cursor=self.pan_cursor)
     
     def _on_pan_drag(self, event):
-        """Führt Pan-Navigation durch."""
-        if self.pan_mode:
+        """Führt Pan-Navigation nur im Landkarten-Modus durch."""
+        if self.pan_mode and self.zoom_mode == 'map':
             # Berechne Verschiebung
             delta_x = event.x - self.pan_start_x
             delta_y = event.y - self.pan_start_y

@@ -317,22 +317,28 @@ class App(tk.Tk):
         if event.keysym == "space": self._toggle_pan_mode(False)
     
     def _toggle_pan_mode(self, enabled):
-        """Aktiviert/deaktiviert Pan-Modus für Navigation."""
-        self.pan_mode = enabled
-        if hasattr(self, 'canvas'):
+        """Aktiviert/deaktiviert Pan-Modus nur im Landkarten-Modus."""
+        # Nur im Landkarten-Modus Pan-Modus aktivieren
+        if hasattr(self, 'canvas') and self.canvas.zoom_mode == 'map':
+            self.pan_mode = enabled
             self.canvas.set_pan_mode(enabled)
-        
-        # Visuelles Feedback
-        if enabled:
-            # Zeige Pan-Hinweis
-            if not hasattr(self, 'pan_banner'):
-                self.pan_banner = tk.Label(self, text="🖱️ Pan-Modus aktiv - Leertaste gedrückt halten und ziehen", 
-                                         bg="#4CAF50", fg="#000000", font=("Helvetica", 10, "bold"))
-            self.pan_banner.pack(side="top", fill="x", pady=(0, 5))
+            
+            # Visuelles Feedback nur im Landkarten-Modus
+            if enabled:
+                # Zeige Pan-Hinweis
+                if not hasattr(self, 'pan_banner'):
+                    self.pan_banner = tk.Label(self, text="🖱️ Pan-Modus aktiv - Leertaste gedrückt halten und ziehen", 
+                                             bg="#4CAF50", fg="#000000", font=("Helvetica", 10, "bold"))
+                self.pan_banner.pack(side="top", fill="x", pady=(0, 5))
+            else:
+                # Verstecke Pan-Hinweis
+                if hasattr(self, 'pan_banner'):
+                    self.pan_banner.pack_forget()
         else:
-            # Verstecke Pan-Hinweis
-            if hasattr(self, 'pan_banner'):
-                self.pan_banner.pack_forget()
+            # Im dynamischen Modus: Pan-Modus deaktiviert
+            self.pan_mode = False
+            if hasattr(self, 'canvas'):
+                self.canvas.set_pan_mode(False)
     
     def _check_for_updates(self):
         """Prüft auf Updates und zeigt Dialog."""
