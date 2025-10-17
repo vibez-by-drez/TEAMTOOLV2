@@ -135,11 +135,7 @@ class UpdateManager:
         if self.check_for_updates():
             result = messagebox.askyesno("🚀 Update Verfügbar!", 
                                       "Ein Update ist verfügbar!\n\n"
-                                      "Neue Features:\n"
-                                      "• Multi-Assignee System\n"
-                                      "• Asteroiden-Animationen\n"
-                                      "• Automatische Updates\n"
-                                      "• TESTTESTTEST - FUNKTIONIERT!\n\n"
+                                      "Drez hat für Sie eine neue Version Entwickelt!\n\n"
                                       "Möchten Sie die Anwendung jetzt aktualisieren?")
             if result:
                 return self.update_application()
