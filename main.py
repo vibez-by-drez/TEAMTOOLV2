@@ -71,6 +71,9 @@ class App(tk.Tk):
         
         # Automatischen Update-Check starten
         self.update_manager.start_auto_update_check()
+        
+        # Sofortigen Update-Check beim Start
+        self.after(2000, self._check_updates_on_start)  # 2 Sekunden nach Start
 
         # Schließen-Handler
         self.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -270,6 +273,23 @@ class App(tk.Tk):
     def _check_for_updates(self):
         """Prüft auf Updates und zeigt Dialog."""
         self.update_manager.show_update_dialog()
+    
+    def _check_updates_on_start(self):
+        """Prüft sofort beim Start auf Updates."""
+        try:
+            if self.update_manager.check_for_updates():
+                result = messagebox.askyesno("Update Verfügbar", 
+                                          "Ein Update ist verfügbar!\n"
+                                          "Möchten Sie die Anwendung jetzt aktualisieren?\n\n"
+                                          "Das Tool wird nach dem Update neu gestartet.")
+                if result:
+                    if self.update_manager.update_application():
+                        # Tool neu starten nach Update
+                        import sys
+                        import os
+                        os.execv(sys.executable, [sys.executable] + sys.argv)
+        except Exception as e:
+            print(f"Update-Check beim Start fehlgeschlagen: {e}")
 
     def _update_radar(self):
         if self.config_data.get('ui', {}).get('enable_radar', False):
