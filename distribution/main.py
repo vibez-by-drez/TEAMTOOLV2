@@ -66,6 +66,13 @@ class App(tk.Tk):
         
         # Pan-Modus für Canvas
         self.pan_mode = False
+        
+        # Canvas-Position und Zoom-Level speichern (für Dynamischen Modus)
+        self.saved_canvas_state = {
+            'zoom_level': 1.0,
+            'scroll_x': 0,
+            'scroll_y': 0
+        }
 
         # Verbindung herstellen und Daten laden
         self._connect_and_load()
@@ -216,6 +223,9 @@ class App(tk.Tk):
         if self.config_data.get('ui', {}).get('enable_radar', False):
             self.radar.place(relx=0.98, rely=0.02, anchor="ne")
         self._draw_projects()
+        
+        # Canvas-State wiederherstellen (nur im Dynamischen Modus)
+        self._restore_canvas_state()
 
     def _draw_projects(self):
         projects = self.model.get_projects_list()
@@ -230,6 +240,9 @@ class App(tk.Tk):
         self.add_btn.configure(command=self.on_add_project)
 
     def on_project_clicked(self, project):
+        # Canvas-State speichern (nur im Dynamischen Modus)
+        self._save_canvas_state()
+        
         self.mode = "tasks"
         self.current_project_id = project["project_id"]
         self.current_project_name = project.get("name", "Unbekanntes Projekt")
@@ -397,6 +410,25 @@ class App(tk.Tk):
         if self.project_settings_btn is not None:
             self.project_settings_btn.destroy()
             self.project_settings_btn = None
+    
+    def _save_canvas_state(self):
+        """Speichert den aktuellen Canvas-State (nur im Dynamischen Modus)."""
+        if hasattr(self, 'canvas') and self.canvas.zoom_mode == 'dynamic':
+            self.saved_canvas_state = {
+                'zoom_level': self.canvas.zoom_level,
+                'scroll_x': self.canvas.canvasx(0),
+                'scroll_y': self.canvas.canvasy(0)
+            }
+    
+    def _restore_canvas_state(self):
+        """Stellt den gespeicherten Canvas-State wieder her (nur im Dynamischen Modus)."""
+        if hasattr(self, 'canvas') and self.canvas.zoom_mode == 'dynamic':
+            # Zoom-Level wiederherstellen
+            self.canvas.set_zoom_level(self.saved_canvas_state['zoom_level'])
+            
+            # Scroll-Position wiederherstellen
+            self.canvas.xview_moveto(self.saved_canvas_state['scroll_x'])
+            self.canvas.yview_moveto(self.saved_canvas_state['scroll_y'])
 
     def edit_task(self, task):
         def save_cb(updated_task):
@@ -408,8 +440,14 @@ class App(tk.Tk):
         TaskEditor(self, self.model, task, save_cb, delete_cb, self.config_data.get("current_user", "")).show()
 
     def open_settings(self):
+        # Canvas-State speichern (nur im Dynamischen Modus)
+        self._save_canvas_state()
+        
         dialog = SettingsDialog(self, self.config_data, self._on_settings_saved)
         dialog.show()
+        
+        # Canvas-State wiederherstellen (nur im Dynamischen Modus)
+        self._restore_canvas_state()
     
     def show_version_info(self):
         """Zeigt Versionsinformationen an."""
