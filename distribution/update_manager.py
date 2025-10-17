@@ -105,32 +105,9 @@ class UpdateManager:
             return False
     
     def _update_via_git(self):
-        """Update über Git - Multi-Strategie für maximale Kompatibilität."""
+        """Update über Git - EINFACHE, EWIGE LOGIK die nie geändert werden muss."""
         try:
-            import os
-            import shutil
-            
-            # 1. Lösche ALLE problematischen Dateien
-            problematic_files = [
-                '__pycache__',
-                'assets/glass_panel.png',
-                'assets/nebula_soft.png',
-                'cowork_config.json'
-            ]
-            
-            for file_path in problematic_files:
-                if os.path.exists(file_path):
-                    try:
-                        if os.path.isdir(file_path):
-                            shutil.rmtree(file_path, ignore_errors=True)
-                        else:
-                            os.remove(file_path)
-                        print(f"Gelöscht: {file_path}")
-                    except:
-                        pass
-            
-            # 2. Multi-Strategie: Erst einfacher Pull, dann aggressive Reset
-            # Versuche zuerst einfachen Pull (für alte Instanzen)
+            # EINFACHSTER MÖGLICHER ANSATZ - funktioniert für immer
             result = subprocess.run(['git', 'pull', 'origin', 'main'], 
                                  capture_output=True, text=True)
             
@@ -140,25 +117,8 @@ class UpdateManager:
                                   "Bitte starten Sie die Anwendung neu.")
                 return True
             else:
-                # Falls Pull fehlschlägt, verwende aggressive Reset-Strategie
-                print("Einfacher Pull fehlgeschlagen, verwende aggressive Reset-Strategie...")
-                
-                # Fetch und Reset
-                subprocess.run(['git', 'fetch', 'origin', 'main'], capture_output=True, text=True)
-                result = subprocess.run(['git', 'reset', '--hard', 'origin/main'], 
-                                     capture_output=True, text=True)
-                
-                # Clean für alle unverfolgten Dateien
-                subprocess.run(['git', 'clean', '-fd'], capture_output=True, text=True)
-                
-                if result.returncode == 0:
-                    messagebox.showinfo("Update Erfolgreich", 
-                                      "Die Anwendung wurde erfolgreich aktualisiert!\n"
-                                      "Bitte starten Sie die Anwendung neu.")
-                    return True
-                else:
-                    messagebox.showerror("Update Fehler", f"Git Update fehlgeschlagen: {result.stderr}")
-                    return False
+                messagebox.showerror("Update Fehler", f"Git Update fehlgeschlagen: {result.stderr}")
+                return False
                 
         except Exception as e:
             messagebox.showerror("Update Fehler", f"Git Update fehlgeschlagen: {e}")

@@ -12,6 +12,9 @@ assets/glass_panel.png
 assets/nebula_soft.png
 assets/*.png
 
+# Config files that are user-specific
+cowork_config.json
+
 # IDE Files
 .vscode/
 .idea/
