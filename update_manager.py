@@ -130,27 +130,25 @@ class UpdateManager:
                     except:
                         pass
             
-            # 2. Git stash um alle lokalen Änderungen zu entfernen
-            stash_result = subprocess.run(['git', 'stash', 'push', '-u', '-m', 'Auto-stash vor Update'], 
-                                        capture_output=True, text=True)
-            print("Git stash ausgeführt")
+            # 2. FORCE RESET - ignoriere alle lokalen Änderungen
+            print("Führe FORCE RESET durch - ignoriere alle lokalen Änderungen")
             
             # 3. Git fetch
             fetch_result = subprocess.run(['git', 'fetch', 'origin', 'main'], 
                                         capture_output=True, text=True)
             
-            # 4. Git reset --hard
+            # 4. Git reset --hard (überschreibt ALLES)
             reset_result = subprocess.run(['git', 'reset', '--hard', 'origin/main'], 
                                         capture_output=True, text=True)
             
-            # 5. Git clean
+            # 5. Git clean (entfernt unverfolgte Dateien)
             clean_result = subprocess.run(['git', 'clean', '-fd'], 
                                         capture_output=True, text=True)
             
             if reset_result.returncode == 0:
                 messagebox.showinfo("Update Erfolgreich", 
                                   "Die Anwendung wurde erfolgreich aktualisiert!\n"
-                                  "Alle problematischen Dateien wurden entfernt.\n"
+                                  "Alle lokalen Änderungen wurden überschrieben.\n"
                                   "Bitte starten Sie die Anwendung neu.")
                 return True
             else:
