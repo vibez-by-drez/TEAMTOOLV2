@@ -25,7 +25,7 @@ from update_manager import UpdateManager
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Team Coworking Projekte :D")
+        self.title("Team Coworking Projekte")
         self.geometry("1296x900")
 
         # Konfiguration laden
