@@ -105,41 +105,44 @@ class UpdateManager:
             return False
     
     def _update_via_git(self):
-        """Update über Git mit Konflikt-Behandlung."""
+        """Update über Git mit robuster Konflikt-Behandlung."""
         try:
-            # 1. Stash lokale Änderungen (speichert sie temporär)
-            stash_result = subprocess.run(['git', 'stash', 'push', '-m', 'Auto-stash vor Update'], 
-                                        capture_output=True, text=True)
+            # 1. Prüfe ob es lokale Änderungen gibt
+            status_result = subprocess.run(['git', 'status', '--porcelain'], 
+                                         capture_output=True, text=True)
             
-            # 2. Git pull um Updates zu holen
-            pull_result = subprocess.run(['git', 'pull', 'origin', 'main'], 
-                                       capture_output=True, text=True)
-            
-            if pull_result.returncode == 0:
-                # 3. Versuche lokale Änderungen wieder anzuwenden
-                pop_result = subprocess.run(['git', 'stash', 'pop'], 
-                                          capture_output=True, text=True)
+            if status_result.returncode == 0 and status_result.stdout.strip():
+                # Es gibt lokale Änderungen - verwende force reset
+                print("Lokale Änderungen gefunden - verwende force reset")
                 
-                if pop_result.returncode != 0:
-                    # Konflikte beim Wiederanwenden - das ist normal
-                    print("Lokale Änderungen konnten nicht automatisch angewendet werden - das ist normal")
+                # 2. Force reset zu origin/main (überschreibt lokale Änderungen)
+                reset_result = subprocess.run(['git', 'reset', '--hard', 'origin/main'], 
+                                            capture_output=True, text=True)
                 
-                messagebox.showinfo("Update Erfolgreich", 
-                                  "Die Anwendung wurde erfolgreich aktualisiert!\n"
-                                  "Bitte starten Sie die Anwendung neu.")
-                return True
+                if reset_result.returncode == 0:
+                    messagebox.showinfo("Update Erfolgreich", 
+                                      "Die Anwendung wurde erfolgreich aktualisiert!\n"
+                                      "Lokale Änderungen wurden überschrieben.\n"
+                                      "Bitte starten Sie die Anwendung neu.")
+                    return True
+                else:
+                    messagebox.showerror("Git Update fehlgeschlagen", reset_result.stderr)
+                    return False
             else:
-                # 4. Bei Fehler: Stash wiederherstellen
-                subprocess.run(['git', 'stash', 'pop'], capture_output=True, text=True)
-                messagebox.showerror("Git Update fehlgeschlagen", pull_result.stderr)
-                return False
+                # Keine lokalen Änderungen - normaler pull
+                pull_result = subprocess.run(['git', 'pull', 'origin', 'main'], 
+                                           capture_output=True, text=True)
+                
+                if pull_result.returncode == 0:
+                    messagebox.showinfo("Update Erfolgreich", 
+                                      "Die Anwendung wurde erfolgreich aktualisiert!\n"
+                                      "Bitte starten Sie die Anwendung neu.")
+                    return True
+                else:
+                    messagebox.showerror("Git Update fehlgeschlagen", pull_result.stderr)
+                    return False
                 
         except Exception as e:
-            # Bei Fehler: Stash wiederherstellen
-            try:
-                subprocess.run(['git', 'stash', 'pop'], capture_output=True, text=True)
-            except:
-                pass
             messagebox.showerror("Update Fehler", f"Git Update fehlgeschlagen: {e}")
             return False
     
