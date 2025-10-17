@@ -1614,12 +1614,12 @@ class BubbleCanvas(tk.Canvas):
     def _on_mouse_leave(self, event): self._hide_tooltip()
     
     def _on_mouse_wheel(self, event):
-        """Mausrad-Zoom nur für dynamischen Modus."""
-        if self.zoom_mode == 'map':
-            # Im Landkarten-Modus: Mausrad deaktiviert, nur Slider
+        """Mausrad-Zoom nur für Landkarten-Modus."""
+        if self.zoom_mode == 'dynamic':
+            # Im dynamischen Modus: Mausrad deaktiviert, nur Slider
             return
             
-        # Nur für dynamischen Modus: Zoom auf Mausposition
+        # Nur für Landkarten-Modus: Zoom auf Mausposition
         zoom_factor = 1.1 if event.delta > 0 else 0.9
         new_zoom = self.zoom_level * zoom_factor
         new_zoom = max(self.min_zoom, min(self.max_zoom, new_zoom))
