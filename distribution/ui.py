@@ -724,22 +724,27 @@ class BubbleCanvas(tk.Canvas):
             radius = self.get_effective_radius(base_radius)
             positions = self._calculate_map_positions(valid_objects, bubble_type, center_x, center_y, w, h, radius)
         else:
-            # Dynamischer Modus: Kreisförmige Anordnung
-            if num_bubbles == 1:
-                # Einzelne Bubble in der Mitte
-                positions = [(center_x, center_y)]
+            # Dynamischer Modus: Prioritäts-basierte Anordnung für Projekte
+            if bubble_type == "project":
+                # Projekte: Prioritäts-basierte Positionierung
+                positions = self._calculate_priority_positions(num_bubbles, center_x, center_y, w, h, radius, valid_objects)
             else:
-                # Kreisförmige Anordnung mit Deadline-Priorität
-                positions = self._calculate_circular_positions(num_bubbles, center_x, center_y, w, h, radius, valid_objects)
-                
-                # Prüfe auf Überlappungen und zoome automatisch raus wenn nötig
-                max_auto_zoom_attempts = 5
-                for attempt in range(max_auto_zoom_attempts):
-                    if not self._check_for_overlaps_and_auto_zoom(positions, radius):
-                        break
-                    # Neu berechnen mit kleinerem Radius
-                    radius = self.get_effective_radius(base_radius)
-                    positions = self._calculate_circular_positions(num_bubbles, center_x, center_y, w, h, radius)
+                # Tasks: Kreisförmige Anordnung
+                if num_bubbles == 1:
+                    # Einzelne Bubble in der Mitte
+                    positions = [(center_x, center_y)]
+                else:
+                    # Kreisförmige Anordnung mit Deadline-Priorität
+                    positions = self._calculate_circular_positions(num_bubbles, center_x, center_y, w, h, radius, valid_objects)
+                    
+                    # Prüfe auf Überlappungen und zoome automatisch raus wenn nötig
+                    max_auto_zoom_attempts = 5
+                    for attempt in range(max_auto_zoom_attempts):
+                        if not self._check_for_overlaps_and_auto_zoom(positions, radius):
+                            break
+                        # Neu berechnen mit kleinerem Radius
+                        radius = self.get_effective_radius(base_radius)
+                        positions = self._calculate_circular_positions(num_bubbles, center_x, center_y, w, h, radius)
 
         for i, obj in enumerate(valid_objects):
             x, y = positions[i]
@@ -1036,6 +1041,48 @@ class BubbleCanvas(tk.Canvas):
         
         # Animation fortsetzen (gleiche Framerate wie Schwebebewegung für maximale Flüssigkeit)
         self.asteroid_animation_id = self.after(6, self._animate_asteroids)  # Gleiche Framerate wie floating
+
+    def _calculate_priority_positions(self, num_bubbles, center_x, center_y, canvas_width, canvas_height, bubble_radius, data_list=None):
+        """Berechnet Positionen basierend auf Priorität (5 = Mitte, niedrigere = außen)."""
+        import math
+        
+        if num_bubbles <= 0:
+            return []
+        
+        if num_bubbles == 1:
+            return [(center_x, center_y)]
+        
+        positions = []
+        
+        # Prioritäten aus data_list extrahieren
+        priority_data = []
+        for i, obj in enumerate(data_list):
+            priority = obj.get("priority", 1)
+            priority_data.append((i, priority, obj))
+        
+        # Nach Priorität sortieren (höchste zuerst)
+        priority_data.sort(key=lambda x: x[1], reverse=True)
+        
+        # Positionen basierend auf Priorität berechnen
+        for i, (original_index, priority, obj) in enumerate(priority_data):
+            if priority == 5:
+                # Höchste Priorität: Mitte
+                x, y = center_x, center_y
+            else:
+                # Niedrigere Prioritäten: Kreise um die Mitte
+                angle_step = 360 / max(1, num_bubbles - 1) if num_bubbles > 1 else 0
+                angle = (i - 1) * angle_step if i > 0 else 0
+                
+                # Radius basierend auf Priorität (niedrigere = weiter außen)
+                base_radius = bubble_radius * 3
+                priority_radius = base_radius * (6 - priority)  # 5->1, 4->2, 3->3, 2->4, 1->5
+                
+                x = center_x + priority_radius * math.cos(math.radians(angle))
+                y = center_y + priority_radius * math.sin(math.radians(angle))
+            
+            positions.append((x, y))
+        
+        return positions
 
     def _calculate_circular_positions(self, num_bubbles, center_x, center_y, canvas_width, canvas_height, bubble_radius, data_list=None):
         """Berechnet Positionen basierend auf Task-Anzahl - höchste Anzahl in der Mitte."""

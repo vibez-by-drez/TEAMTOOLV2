@@ -128,6 +128,10 @@ class App(tk.Tk):
         
         btn_frame = tk.Frame(top, bg=config.get_color(self.config_data, "surface_light", "#2a2a2a"))
         btn_frame.pack(side="right", padx=20, pady=15)
+        
+        # Projekt-Einstellungen Button (wird dynamisch hinzugefügt/entfernt)
+        self.project_settings_btn = None
+        
         tk.Button(btn_frame, text="⚙️ Einstellungen", command=self.open_settings, bg="#333333", fg="#000000", font=("Helvetica", 10), relief="sunken", bd=2, padx=15, pady=8, activebackground="#444444", activeforeground="#000000").pack(side="right", padx=(5, 0))
         tk.Button(btn_frame, text="← Zurück zu Projekten", command=self.show_projects, bg="#333333", fg="#000000", font=("Helvetica", 10, "bold"), relief="sunken", bd=2, padx=15, pady=8, activebackground="#444444", activeforeground="#000000").pack(side="right")
 
@@ -205,14 +209,24 @@ class App(tk.Tk):
         # Titel zurücksetzen auf Standard
         self.title_label.config(text="Team Coworking Projekte")
         
+        # Projekt-Einstellungen Button entfernen
+        self._remove_project_settings_button()
+        
         self.legend.pack_forget()
         if self.config_data.get('ui', {}).get('enable_radar', False):
             self.radar.place(relx=0.98, rely=0.02, anchor="ne")
         self._draw_projects()
 
     def _draw_projects(self):
-        projects = sorted(self.model.get_projects_list(), key=lambda p: p.get("name", "").lower())
-        self.canvas.draw_bubbles(projects, "name", "project", self.on_project_clicked)
+        projects = self.model.get_projects_list()
+        
+        # Prioritäten berechnen
+        projects_with_priority = self._calculate_project_priorities(projects)
+        
+        # Nach Priorität sortieren (höchste zuerst)
+        projects_with_priority.sort(key=lambda p: p.get("priority", 0), reverse=True)
+        
+        self.canvas.draw_bubbles(projects_with_priority, "name", "project", self.on_project_clicked)
         self.add_btn.configure(command=self.on_add_project)
 
     def on_project_clicked(self, project):
@@ -222,6 +236,9 @@ class App(tk.Tk):
         
         # Titel aktualisieren um aktuelles Projekt anzuzeigen
         self.title_label.config(text=f"Team Coworking Projekte - {self.current_project_name}")
+        
+        # Projekt-Einstellungen Button hinzufügen
+        self._add_project_settings_button()
         
         self.legend.pack(side="bottom", fill="x", padx=10, pady=(0, 10))
         if self.config_data.get('ui', {}).get('enable_radar', False):
@@ -255,6 +272,131 @@ class App(tk.Tk):
 
     def on_task_clicked(self, task):
         self.edit_task(task)
+    
+    def _edit_current_project(self):
+        """Bearbeitet das aktuelle Projekt in der Task-Ansicht."""
+        if not self.current_project_id:
+            return
+            
+        # Aktuelles Projekt finden
+        current_project = None
+        for project in self.model.get_projects_list():
+            if project.get("project_id") == self.current_project_id:
+                current_project = project
+                break
+                
+        if not current_project:
+            return
+            
+        # Projekt-Dialog öffnen
+        def on_dialog_result(result):
+            if result:
+                name, color, deadline = result
+                current_project["name"] = name
+                current_project["color"] = color
+                current_project["deadline"] = deadline
+                self.model.save_project(current_project)
+                
+                # Titel aktualisieren
+                self.title_label.config(text=f"Team Coworking Projekte - {name}")
+                
+                # Projekte neu zeichnen (falls wir zurück zu Projekten gehen)
+                self._refresh_view()
+        
+        from ui import NewProjectDialog
+        
+        # Werte vor dem Dialog speichern
+        project_name = current_project.get("name", "")
+        project_color = current_project.get("color", "#222222")
+        project_deadline = current_project.get("deadline", "")
+        
+        dialog = NewProjectDialog(self, on_result=on_dialog_result)
+        
+        # Nach der Initialisierung die Werte setzen
+        def set_values():
+            try:
+                dialog.var_name.set(project_name)
+                dialog.var_color.set(project_color)
+                dialog.var_deadline.set(project_deadline)
+                
+                # Farbe im Preview aktualisieren
+                if hasattr(dialog, 'color_preview'):
+                    dialog.color_preview.create_rectangle(2, 2, 38, 28, fill=project_color, outline="")
+            except:
+                pass  # Falls noch nicht initialisiert, ignorieren
+        
+        dialog.show()
+        
+        # Nach kurzer Verzögerung die Werte setzen
+        self.after(100, set_values)
+    
+    def _calculate_project_priorities(self, projects):
+        """Berechnet Prioritäten basierend auf Deadlines (1-5, 5 = höchste)."""
+        from datetime import datetime
+        
+        # Projekte mit Deadlines sammeln
+        projects_with_deadlines = []
+        for project in projects:
+            deadline = project.get("deadline", "")
+            if deadline:
+                try:
+                    deadline_date = datetime.strptime(deadline, "%Y-%m-%d")
+                    days_until = (deadline_date - datetime.now()).days
+                    projects_with_deadlines.append((project, days_until))
+                except:
+                    pass
+        
+        # Nach Tagen bis Deadline sortieren (nächste zuerst)
+        projects_with_deadlines.sort(key=lambda x: x[1])
+        
+        # Prioritäten zuweisen (5 Stufen)
+        priority_levels = [5, 4, 3, 2, 1]
+        projects_with_priority = []
+        
+        for i, (project, days_until) in enumerate(projects_with_deadlines):
+            # Priorität basierend auf Position in der sortierten Liste
+            if i < len(priority_levels):
+                priority = priority_levels[i]
+            else:
+                # Wenn mehr als 5 Projekte, wiederhole die niedrigeren Stufen
+                priority = priority_levels[i % len(priority_levels)]
+            
+            project["priority"] = priority
+            project["days_until_deadline"] = days_until
+            projects_with_priority.append(project)
+        
+        # Projekte ohne Deadline bekommen Priorität 1
+        for project in projects:
+            if not project.get("deadline"):
+                project["priority"] = 1
+                project["days_until_deadline"] = None
+                projects_with_priority.append(project)
+        
+        return projects_with_priority
+    
+    def _add_project_settings_button(self):
+        """Fügt den Projekt-Einstellungen Button hinzu."""
+        if self.project_settings_btn is None:
+            # Finde den btn_frame (erste Frame in der oberen Leiste)
+            for widget in self.winfo_children():
+                if isinstance(widget, tk.Frame):
+                    for child in widget.winfo_children():
+                        if isinstance(child, tk.Frame) and child.winfo_children():
+                            # Das ist der btn_frame
+                            self.project_settings_btn = tk.Button(child, text="📝 Projekt-Einstellungen", 
+                                                               command=self._edit_current_project,
+                                                               bg="#4CAF50", fg="#000000", 
+                                                               font=("Helvetica", 9, "bold"), 
+                                                               relief="raised", bd=2)
+                            self.project_settings_btn.pack(side="left", padx=(0, 10))
+                            break
+                    break
+    
+    def _remove_project_settings_button(self):
+        """Entfernt den Projekt-Einstellungen Button."""
+        if self.project_settings_btn is not None:
+            self.project_settings_btn.destroy()
+            self.project_settings_btn = None
 
     def edit_task(self, task):
         def save_cb(updated_task):

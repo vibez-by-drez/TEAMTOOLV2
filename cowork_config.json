@@ -17,6 +17,6 @@
     "enable_tooltips": true,
     "floating_speed": 0.2,
     "enable_floating_animation": true,
-    "zoom_mode": "map"
+    "zoom_mode": "dynamic"
   }
 }
