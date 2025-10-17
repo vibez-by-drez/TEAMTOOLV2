@@ -724,9 +724,9 @@ class BubbleCanvas(tk.Canvas):
             radius = self.get_effective_radius(base_radius)
             positions = self._calculate_map_positions(valid_objects, bubble_type, center_x, center_y, w, h, radius)
         else:
-            # Dynamischer Modus: Prioritäts-basierte Anordnung für Projekte
+            # Dynamischer Modus: IMMER Prioritäts-basierte Anordnung für Projekte
             if bubble_type == "project":
-                # Projekte: Prioritäts-basierte Positionierung
+                # Projekte: IMMER Prioritäts-basierte Positionierung (auch ohne Prioritäten)
                 positions = self._calculate_priority_positions(num_bubbles, center_x, center_y, w, h, radius, valid_objects)
             else:
                 # Tasks: Kreisförmige Anordnung
