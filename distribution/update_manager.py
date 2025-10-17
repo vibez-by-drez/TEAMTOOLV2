@@ -130,8 +130,8 @@ class UpdateManager:
                     except:
                         pass
             
-            # 2. Git ignore diese Dateien komplett
-            print("Ignoriere problematische Dateien komplett")
+            # 2. NOTFALL-UPDATE für bestehende Installationen
+            print("Führe NOTFALL-UPDATE durch...")
             
             # 3. Git fetch
             fetch_result = subprocess.run(['git', 'fetch', 'origin', 'main'], 
@@ -147,13 +147,14 @@ class UpdateManager:
             
             # 6. Stelle sicher dass .gitignore aktiv ist
             subprocess.run(['git', 'add', '.gitignore'], capture_output=True)
-            subprocess.run(['git', 'commit', '-m', 'Update .gitignore'], capture_output=True)
+            subprocess.run(['git', 'commit', '-m', 'Emergency: Activate .gitignore'], capture_output=True)
             
             if reset_result.returncode == 0:
-                messagebox.showinfo("Update Erfolgreich", 
-                                  "Die Anwendung wurde erfolgreich aktualisiert!\n"
-                                  "Alle problematischen Dateien werden ignoriert.\n"
-                                  "Bitte starten Sie die Anwendung neu.")
+                messagebox.showinfo("NOTFALL-UPDATE Erfolgreich", 
+                                  "🚨 NOTFALL-UPDATE erfolgreich!\n\n"
+                                  "✅ Alle problematischen Dateien wurden entfernt\n"
+                                  "✅ Git Update funktioniert jetzt\n"
+                                  "✅ Bitte starten Sie die Anwendung neu")
                 return True
             else:
                 messagebox.showerror("Git Update fehlgeschlagen", reset_result.stderr)
