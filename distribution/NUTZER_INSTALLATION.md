@@ -2,9 +2,13 @@
 
 ## 📋 Schnellstart
 
-### **Schritt 1: Installation**
+### **Schritt 1: Repository klonen**
 ```bash
-# Script herunterladen und ausführen
+# Repository klonen
+git clone https://github.com/vibez-by-drez/TEAMTOOLV2.git
+cd TEAMTOOLV2
+
+# Installation starten
 python install_for_users.py
 ```
 

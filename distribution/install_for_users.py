@@ -15,8 +15,8 @@ def main():
     print("🚀 Coworking Tool - Installation für Nutzer")
     print("=" * 50)
     
-    # Repository-URL (HIER DEINE GITHUB-URL EINTRAGEN!)
-    REPO_URL = "https://github.com/DEIN-USERNAME/coworking-tool.git"  # ← ÄNDERE DIESE URL!
+    # Repository-URL
+    REPO_URL = "https://github.com/vibez-by-drez/TEAMTOOLV2.git"
     
     print("📋 Installation startet...")
     print(f"🔗 Repository: {REPO_URL}")
