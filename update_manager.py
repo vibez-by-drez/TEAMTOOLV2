@@ -105,34 +105,38 @@ class UpdateManager:
             return False
     
     def _update_via_git(self):
-        """Update über Git - Ursprüngliche Logik mit Konflikt-Lösung."""
+        """Update über Git - Aggressive Konflikt-Lösung für maximale Kompatibilität."""
         try:
-            # 1. Lösche problematische Dateien vor dem Pull
             import os
             import shutil
             
-            # Lösche __pycache__ Verzeichnis komplett
-            if os.path.exists('__pycache__'):
-                shutil.rmtree('__pycache__', ignore_errors=True)
-                print("Gelöscht: __pycache__ Verzeichnis")
-            
-            # Lösche problematische Assets
+            # 1. Lösche ALLE problematischen Dateien
             problematic_files = [
+                '__pycache__',
                 'assets/glass_panel.png',
-                'assets/nebula_soft.png'
+                'assets/nebula_soft.png',
+                'cowork_config.json'
             ]
             
             for file_path in problematic_files:
                 if os.path.exists(file_path):
                     try:
-                        os.remove(file_path)
+                        if os.path.isdir(file_path):
+                            shutil.rmtree(file_path, ignore_errors=True)
+                        else:
+                            os.remove(file_path)
                         print(f"Gelöscht: {file_path}")
                     except:
                         pass
             
-            # 2. Einfacher Git pull wie in der ursprünglichen Version
-            result = subprocess.run(['git', 'pull', 'origin', 'main'], 
+            # 2. Aggressive Git-Reset-Strategie
+            # Erst fetch, dann hard reset
+            subprocess.run(['git', 'fetch', 'origin', 'main'], capture_output=True, text=True)
+            result = subprocess.run(['git', 'reset', '--hard', 'origin/main'], 
                                  capture_output=True, text=True)
+            
+            # 3. Clean für alle unverfolgten Dateien
+            subprocess.run(['git', 'clean', '-fd'], capture_output=True, text=True)
             
             if result.returncode == 0:
                 messagebox.showinfo("Update Erfolgreich", 
