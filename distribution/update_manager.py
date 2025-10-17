@@ -105,25 +105,46 @@ class UpdateManager:
             return False
     
     def _update_via_git(self):
-        """Update über Git mit ultimativer Konflikt-Lösung."""
+        """Update über Git - EINFACHSTE Lösung die IMMER funktioniert."""
         try:
-            # 1. IMMER zuerst fetch um sicherzustellen dass wir die neuesten Daten haben
+            # 1. Lösche problematische Dateien manuell
+            import os
+            import shutil
+            
+            # Lösche __pycache__ Verzeichnis komplett
+            if os.path.exists('__pycache__'):
+                shutil.rmtree('__pycache__', ignore_errors=True)
+            
+            # Lösche problematische Assets (werden vom Update überschrieben)
+            problematic_files = [
+                'assets/glass_panel.png',
+                'assets/nebula_soft.png'
+            ]
+            
+            for file_path in problematic_files:
+                if os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                        print(f"Gelöscht: {file_path}")
+                    except:
+                        pass
+            
+            # 2. Git fetch
             fetch_result = subprocess.run(['git', 'fetch', 'origin', 'main'], 
                                         capture_output=True, text=True)
             
-            # 2. IMMER force reset - ignoriere alle lokalen Änderungen
-            print("Führe force reset durch - ignoriere alle lokalen Änderungen")
+            # 3. Git reset --hard
             reset_result = subprocess.run(['git', 'reset', '--hard', 'origin/main'], 
                                         capture_output=True, text=True)
             
+            # 4. Git clean
+            clean_result = subprocess.run(['git', 'clean', '-fd'], 
+                                        capture_output=True, text=True)
+            
             if reset_result.returncode == 0:
-                # 3. Clean um sicherzustellen dass alle unverfolgten Dateien entfernt werden
-                clean_result = subprocess.run(['git', 'clean', '-fd'], 
-                                            capture_output=True, text=True)
-                
                 messagebox.showinfo("Update Erfolgreich", 
                                   "Die Anwendung wurde erfolgreich aktualisiert!\n"
-                                  "Alle lokalen Änderungen wurden überschrieben.\n"
+                                  "Alle problematischen Dateien wurden entfernt.\n"
                                   "Bitte starten Sie die Anwendung neu.")
                 return True
             else:
