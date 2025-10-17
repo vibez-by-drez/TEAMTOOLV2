@@ -105,7 +105,7 @@ class UpdateManager:
             return False
     
     def _update_via_git(self):
-        """Update über Git - ULTIMATIVE Lösung die IMMER funktioniert."""
+        """Update über Git - Kompatibel mit alter UND neuer Logik."""
         try:
             # 1. Lösche ALLE problematischen Dateien manuell
             import os
@@ -130,31 +130,28 @@ class UpdateManager:
                     except:
                         pass
             
-            # 2. NOTFALL-UPDATE für bestehende Installationen
-            print("Führe NOTFALL-UPDATE durch...")
+            # 2. Git stash um alle lokalen Änderungen zu entfernen
+            stash_result = subprocess.run(['git', 'stash', 'push', '-u', '-m', 'Auto-stash vor Update'], 
+                                        capture_output=True, text=True)
+            print("Git stash ausgeführt")
             
             # 3. Git fetch
             fetch_result = subprocess.run(['git', 'fetch', 'origin', 'main'], 
                                         capture_output=True, text=True)
             
-            # 4. Git reset --hard (überschreibt ALLES)
+            # 4. Git reset --hard
             reset_result = subprocess.run(['git', 'reset', '--hard', 'origin/main'], 
                                         capture_output=True, text=True)
             
-            # 5. Git clean (entfernt unverfolgte Dateien)
+            # 5. Git clean
             clean_result = subprocess.run(['git', 'clean', '-fd'], 
                                         capture_output=True, text=True)
             
-            # 6. Stelle sicher dass .gitignore aktiv ist
-            subprocess.run(['git', 'add', '.gitignore'], capture_output=True)
-            subprocess.run(['git', 'commit', '-m', 'Emergency: Activate .gitignore'], capture_output=True)
-            
             if reset_result.returncode == 0:
-                messagebox.showinfo("NOTFALL-UPDATE Erfolgreich", 
-                                  "🚨 NOTFALL-UPDATE erfolgreich!\n\n"
-                                  "✅ Alle problematischen Dateien wurden entfernt\n"
-                                  "✅ Git Update funktioniert jetzt\n"
-                                  "✅ Bitte starten Sie die Anwendung neu")
+                messagebox.showinfo("Update Erfolgreich", 
+                                  "Die Anwendung wurde erfolgreich aktualisiert!\n"
+                                  "Alle problematischen Dateien wurden entfernt.\n"
+                                  "Bitte starten Sie die Anwendung neu.")
                 return True
             else:
                 messagebox.showerror("Git Update fehlgeschlagen", reset_result.stderr)
