@@ -62,6 +62,10 @@ class App(tk.Tk):
         # Tastatur-Shortcuts binden
         self.bind("<Escape>", self._toggle_focus_mode)
         self.bind("<KeyPress>", self._on_key_press)
+        self.bind("<KeyRelease>", self._on_key_release)
+        
+        # Pan-Modus für Canvas
+        self.pan_mode = False
 
         # Verbindung herstellen und Daten laden
         self._connect_and_load()
@@ -180,11 +184,17 @@ class App(tk.Tk):
             time.sleep(int(self.config_data.get("poll_seconds", config.DEFAULT_POLL_SECONDS)))
 
     def _refresh_view(self):
-        if self.mode == "projects":
-            self._draw_projects()
+        # Im Landkarten-Modus: Nur Daten aktualisieren, nicht neu zeichnen
+        if hasattr(self, 'canvas') and self.canvas.zoom_mode == 'map':
+            # Nur Radar aktualisieren, keine Neuzeichnung der Bubbles
+            self._update_radar()
         else:
-            self._draw_tasks(self.current_project_id)
-        self._update_radar()
+            # Normaler Modus: Vollständige Aktualisierung
+            if self.mode == "projects":
+                self._draw_projects()
+            else:
+                self._draw_tasks(self.current_project_id)
+            self._update_radar()
 
     def show_projects(self):
         self.mode = "projects"
@@ -260,6 +270,13 @@ class App(tk.Tk):
     def _on_settings_saved(self, new_config):
         self.config_data = new_config
         try:
+            # Update zoom mode in canvas
+            if hasattr(self, 'canvas'):
+                self.canvas.zoom_mode = self.config_data.get('ui', {}).get('zoom_mode', 'dynamic')
+                # Reset fixed positions when switching modes
+                if hasattr(self.canvas, 'fixed_positions'):
+                    self.canvas.fixed_positions.clear()
+            
             self.backend = SheetsBackend(self.config_data)
             self.model = Model(self.backend)
             self._connect_and_load()
@@ -283,6 +300,28 @@ class App(tk.Tk):
         if event.keysym.lower() == "f1": self.open_settings()
         elif event.keysym.lower() == "f2": self._toggle_focus_mode()
         elif event.keysym.lower() == "f3": self._check_for_updates()
+        elif event.keysym == "space": self._toggle_pan_mode(True)
+    
+    def _on_key_release(self, event):
+        if event.keysym == "space": self._toggle_pan_mode(False)
+    
+    def _toggle_pan_mode(self, enabled):
+        """Aktiviert/deaktiviert Pan-Modus für Navigation."""
+        self.pan_mode = enabled
+        if hasattr(self, 'canvas'):
+            self.canvas.set_pan_mode(enabled)
+        
+        # Visuelles Feedback
+        if enabled:
+            # Zeige Pan-Hinweis
+            if not hasattr(self, 'pan_banner'):
+                self.pan_banner = tk.Label(self, text="🖱️ Pan-Modus aktiv - Leertaste gedrückt halten und ziehen", 
+                                         bg="#4CAF50", fg="#000000", font=("Helvetica", 10, "bold"))
+            self.pan_banner.pack(side="top", fill="x", pady=(0, 5))
+        else:
+            # Verstecke Pan-Hinweis
+            if hasattr(self, 'pan_banner'):
+                self.pan_banner.pack_forget()
     
     def _check_for_updates(self):
         """Prüft auf Updates und zeigt Dialog."""

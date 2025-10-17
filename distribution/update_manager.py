@@ -133,13 +133,17 @@ class UpdateManager:
     def show_update_dialog(self):
         """Zeigt einen Update-Dialog an."""
         if self.check_for_updates():
-            result = messagebox.askyesno("Update Verfügbar", 
-                                      "Ein Update ist verfügbar!\n"
+            result = messagebox.askyesno("🚀 Update Verfügbar!", 
+                                      "Ein Update ist verfügbar!\n\n"
+                                      "Neue Features:\n"
+                                      "• Multi-Assignee System\n"
+                                      "• Asteroiden-Animationen\n"
+                                      "• Automatische Updates\n\n"
                                       "Möchten Sie die Anwendung jetzt aktualisieren?")
             if result:
                 return self.update_application()
         else:
-            messagebox.showinfo("Kein Update", "Die Anwendung ist bereits auf dem neuesten Stand.")
+            messagebox.showinfo("✅ Kein Update", "Die Anwendung ist bereits auf dem neuesten Stand.")
             return False
     
     def get_version_info(self):

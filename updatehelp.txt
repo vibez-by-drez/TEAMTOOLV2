@@ -1,0 +1,65 @@
+Hier ist eine klare Anleitung, wie du einem anderen Coding-Agent erklären kannst, wie er ein neues Update pushen kann:
+
+## Anleitung für einen neuen Coding-Agent
+
+### 1. Repository-Setup prüfen
+```bash
+# Prüfe ob es ein Git-Repository ist
+git status
+
+# Falls nicht, initialisiere es
+git init
+git remote add origin https://github.com/vibez-by-drez/TEAMTOOLV2.git
+```
+
+### 2. Aktuelle Änderungen committen
+```bash
+# Alle Änderungen hinzufügen
+git add .
+
+# Commit mit aussagekräftiger Nachricht
+git commit -m "Beschreibung der Änderungen"
+
+# Zum GitHub Repository pushen
+git push origin main
+```
+
+### 3. Wichtige Dateien die geändert werden könnten:
+- `main.py` - Hauptanwendung
+- `ui.py` - UI-Komponenten und Canvas
+- `backend.py` - Datenbank-Integration
+- `config.py` - Konfiguration
+- `update_manager.py` - Update-System
+
+### 4. Update-System funktioniert automatisch:
+- Alle Nutzer-Instanzen prüfen alle 5 Minuten auf Updates
+- Bei App-Start wird sofort nach Updates gesucht
+- F3-Taste startet manuelle Update-Prüfung
+- Updates werden automatisch installiert und die App neu gestartet
+
+### 5. Testen des Updates:
+```bash
+# Nach dem Push, auf einer anderen Instanz:
+# Die App startet automatisch und prüft auf Updates
+# Oder F3 drücken für manuelle Prüfung
+```
+
+### 6. Wichtige Hinweise:
+- **NIE** die `update_manager.py` oder `install_for_users.py` Dateien löschen
+- **NIE** das `.git` Verzeichnis löschen
+- Immer `git add .` und `git commit` vor `git push`
+- Das Update-System funktioniert nur wenn das Repository korrekt eingerichtet ist
+
+### 7. Falls Probleme auftreten:
+```bash
+# Git-Status prüfen
+git status
+
+# Letzte Commits anzeigen
+git log --oneline -5
+
+# Remote-Repository prüfen
+git remote -v
+```
+
+**Das war's!** Ein neuer Agent kann einfach Änderungen machen, committen und pushen - das Update-System übernimmt den Rest automatisch für alle Nutzer.

@@ -25,7 +25,7 @@ from update_manager import UpdateManager
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Team Coworking Projekte")
+        self.title("Team Coworking Projekte :D")
         self.geometry("1296x900")
 
         # Konfiguration laden
@@ -62,6 +62,10 @@ class App(tk.Tk):
         # Tastatur-Shortcuts binden
         self.bind("<Escape>", self._toggle_focus_mode)
         self.bind("<KeyPress>", self._on_key_press)
+        self.bind("<KeyRelease>", self._on_key_release)
+        
+        # Pan-Modus für Canvas
+        self.pan_mode = False
 
         # Verbindung herstellen und Daten laden
         self._connect_and_load()
@@ -71,6 +75,9 @@ class App(tk.Tk):
         
         # Automatischen Update-Check starten
         self.update_manager.start_auto_update_check()
+        
+        # Sofortigen Update-Check beim Start
+        self.after(2000, self._check_updates_on_start)  # 2 Sekunden nach Start
 
         # Schließen-Handler
         self.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -104,6 +111,20 @@ class App(tk.Tk):
         self.status_label = tk.Label(title_frame, text="● Offline", font=("Helvetica", 10), bg=config.get_color(self.config_data, "surface_light", "#2a2a2a"), fg="#000000")
         self.status_label.pack(side="left", padx=(15, 0))
 
+        # Zoom-Slider
+        zoom_frame = tk.Frame(top, bg=config.get_color(self.config_data, "surface_light", "#2a2a2a"))
+        zoom_frame.pack(side="right", padx=10, pady=15)
+        
+        tk.Label(zoom_frame, text="🔍", font=("Helvetica", 12), bg=config.get_color(self.config_data, "surface_light", "#2a2a2a"), fg="#000000").pack(side="left")
+        
+        self.zoom_var = tk.DoubleVar(value=1.0)
+        self.zoom_scale = tk.Scale(zoom_frame, from_=0.3, to=3.0, resolution=0.1, orient="horizontal", 
+                                 variable=self.zoom_var, command=self._on_zoom_change,
+                                 bg=config.get_color(self.config_data, "surface_light", "#2a2a2a"), 
+                                 fg="#000000", highlightthickness=0, length=100)
+        self.zoom_scale.pack(side="left", padx=(5, 0))
+        
+        
         btn_frame = tk.Frame(top, bg=config.get_color(self.config_data, "surface_light", "#2a2a2a"))
         btn_frame.pack(side="right", padx=20, pady=15)
         tk.Button(btn_frame, text="⚙️ Einstellungen", command=self.open_settings, bg="#333333", fg="#000000", font=("Helvetica", 10), relief="sunken", bd=2, padx=15, pady=8, activebackground="#444444", activeforeground="#000000").pack(side="right", padx=(5, 0))
@@ -163,11 +184,17 @@ class App(tk.Tk):
             time.sleep(int(self.config_data.get("poll_seconds", config.DEFAULT_POLL_SECONDS)))
 
     def _refresh_view(self):
-        if self.mode == "projects":
-            self._draw_projects()
+        # Im Landkarten-Modus: Nur Daten aktualisieren, nicht neu zeichnen
+        if hasattr(self, 'canvas') and self.canvas.zoom_mode == 'map':
+            # Nur Radar aktualisieren, keine Neuzeichnung der Bubbles
+            self._update_radar()
         else:
-            self._draw_tasks(self.current_project_id)
-        self._update_radar()
+            # Normaler Modus: Vollständige Aktualisierung
+            if self.mode == "projects":
+                self._draw_projects()
+            else:
+                self._draw_tasks(self.current_project_id)
+            self._update_radar()
 
     def show_projects(self):
         self.mode = "projects"
@@ -243,6 +270,13 @@ class App(tk.Tk):
     def _on_settings_saved(self, new_config):
         self.config_data = new_config
         try:
+            # Update zoom mode in canvas
+            if hasattr(self, 'canvas'):
+                self.canvas.zoom_mode = self.config_data.get('ui', {}).get('zoom_mode', 'dynamic')
+                # Reset fixed positions when switching modes
+                if hasattr(self.canvas, 'fixed_positions'):
+                    self.canvas.fixed_positions.clear()
+            
             self.backend = SheetsBackend(self.config_data)
             self.model = Model(self.backend)
             self._connect_and_load()
@@ -266,10 +300,60 @@ class App(tk.Tk):
         if event.keysym.lower() == "f1": self.open_settings()
         elif event.keysym.lower() == "f2": self._toggle_focus_mode()
         elif event.keysym.lower() == "f3": self._check_for_updates()
+        elif event.keysym == "space": self._toggle_pan_mode(True)
+    
+    def _on_key_release(self, event):
+        if event.keysym == "space": self._toggle_pan_mode(False)
+    
+    def _toggle_pan_mode(self, enabled):
+        """Aktiviert/deaktiviert Pan-Modus für Navigation."""
+        self.pan_mode = enabled
+        if hasattr(self, 'canvas'):
+            self.canvas.set_pan_mode(enabled)
+        
+        # Visuelles Feedback
+        if enabled:
+            # Zeige Pan-Hinweis
+            if not hasattr(self, 'pan_banner'):
+                self.pan_banner = tk.Label(self, text="🖱️ Pan-Modus aktiv - Leertaste gedrückt halten und ziehen", 
+                                         bg="#4CAF50", fg="#000000", font=("Helvetica", 10, "bold"))
+            self.pan_banner.pack(side="top", fill="x", pady=(0, 5))
+        else:
+            # Verstecke Pan-Hinweis
+            if hasattr(self, 'pan_banner'):
+                self.pan_banner.pack_forget()
     
     def _check_for_updates(self):
         """Prüft auf Updates und zeigt Dialog."""
         self.update_manager.show_update_dialog()
+    
+    def _check_updates_on_start(self):
+        """Prüft sofort beim Start auf Updates."""
+        try:
+            if self.update_manager.check_for_updates():
+                result = messagebox.askyesno("Update Verfügbar", 
+                                          "Ein Update ist verfügbar!\n"
+                                          "Möchten Sie die Anwendung jetzt aktualisieren?\n\n"
+                                          "Das Tool wird nach dem Update neu gestartet.")
+                if result:
+                    if self.update_manager.update_application():
+                        # Tool neu starten nach Update
+                        import sys
+                        import os
+                        os.execv(sys.executable, [sys.executable] + sys.argv)
+        except Exception as e:
+            print(f"Update-Check beim Start fehlgeschlagen: {e}")
+    
+    def _on_zoom_change(self, value):
+        """Wird aufgerufen wenn der Zoom-Slider geändert wird."""
+        try:
+            zoom_level = float(value)
+            # Deaktiviere Auto-Zoom wenn Benutzer manuell zoomt
+            self.canvas.auto_zoom_enabled = False
+            self.canvas.set_zoom_level(zoom_level)
+        except (ValueError, AttributeError):
+            pass
+    
 
     def _update_radar(self):
         if self.config_data.get('ui', {}).get('enable_radar', False):

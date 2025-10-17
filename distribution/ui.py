@@ -511,6 +511,7 @@ class SettingsDialog(ModalDialog):
             'tooltips': tk.BooleanVar(value=ui_cfg.get('enable_tooltips', True)),
             'floating_animation': tk.BooleanVar(value=ui_cfg.get('enable_floating_animation', True)),
             'floating_speed': tk.DoubleVar(value=ui_cfg.get('floating_speed', 0.07)),
+            'zoom_mode': tk.StringVar(value=ui_cfg.get('zoom_mode', 'dynamic')),
         }
         r = 0
         tk.Label(self.visual_frame, text="Visuelle Effekte:", bg="white", fg="black", font=("Helvetica", 12, "bold")).grid(row=r, column=0, columnspan=2, sticky="w", pady=(10,5)); r+=1
@@ -531,6 +532,20 @@ class SettingsDialog(ModalDialog):
                                variable=self.vars['floating_speed'], bg="white", fg="black", 
                                font=("Helvetica", 9), length=200)
         speed_slider.grid(row=r, column=0, columnspan=2, sticky="w", pady=5); r+=1
+        
+        # Zoom-Funktionsweise
+        tk.Label(self.visual_frame, text="Zoom-Funktionsweise:", bg="white", fg="black", font=("Helvetica", 12, "bold")).grid(row=r, column=0, columnspan=2, sticky="w", pady=(15,5)); r+=1
+        
+        zoom_frame = tk.Frame(self.visual_frame, bg="white")
+        zoom_frame.grid(row=r, column=0, columnspan=2, sticky="w", pady=5); r+=1
+        
+        tk.Radiobutton(zoom_frame, text="Dynamisch (aktuelle Mechanik)", variable=self.vars['zoom_mode'], 
+                      value="dynamic", bg="white", fg="black", selectcolor="#4CAF50", 
+                      activebackground="white", font=("Helvetica", 10)).pack(anchor="w")
+        
+        tk.Radiobutton(zoom_frame, text="Landkarte (feste Positionen, Mausrad-Zoom)", variable=self.vars['zoom_mode'], 
+                      value="map", bg="white", fg="black", selectcolor="#4CAF50", 
+                      activebackground="white", font=("Helvetica", 10)).pack(anchor="w")
         
         # Force immediate rendering of all widgets
         self.visual_frame.update_idletasks()
@@ -556,6 +571,8 @@ class SettingsDialog(ModalDialog):
                 self.config_data['ui']['floating_speed'] = var.get()
             elif key == 'floating_animation':
                 self.config_data['ui']['enable_floating_animation'] = var.get()
+            elif key == 'zoom_mode':
+                self.config_data['ui']['zoom_mode'] = var.get()
             else:
                 self.config_data['ui'][f'enable_{key}'] = var.get()
 
@@ -600,10 +617,44 @@ class BubbleCanvas(tk.Canvas):
         self.floating_offset = 0
         self.bubble_groups = []  # Speichert Gruppen von zusammengehörigen Bubble-Elementen
         self.asteroid_animation_id = None  # Animation für Asteroiden
+        
+        # Zoom-Funktionalität
+        self.zoom_level = 1.0  # 1.0 = normal, 0.5 = kleiner, 2.0 = größer
+        self.min_zoom = 0.3
+        self.max_zoom = 3.0
+        self.auto_zoom_enabled = True  # Automatisches Zoomen für maximale Größe
+        
+        # Landkarten-Modus: Startgröße 0.7
+        self.map_start_zoom = 0.7
+        
+        # Landkarten-Zoom-Funktionalität
+        self.zoom_mode = app_config.get('ui', {}).get('zoom_mode', 'dynamic')  # 'dynamic' oder 'map'
+        self.fixed_positions = {}  # Speichert feste Positionen für Landkarten-Modus
+        self.map_center_x = 0
+        self.map_center_y = 0
+        self.map_offset_x = 0
+        self.map_offset_y = 0
+        
+        # Pan-Funktionalität (Leertaste + Maus)
+        self.pan_mode = False
+        self.pan_start_x = 0
+        self.pan_start_y = 0
+        self.pan_start_offset_x = 0
+        self.pan_start_offset_y = 0
+        self.pan_cursor = "fleur"  # Hand-Cursor für Pan-Modus
 
         self.bind("<Configure>", lambda e: self.redraw())
         self.bind("<Motion>", self._on_mouse_move)
+        self.bind("<MouseWheel>", self._on_mouse_wheel)  # Mausrad für Landkarten-Zoom
         self.bind("<Leave>", self._on_mouse_leave)
+        
+        # Pan-Funktionalität Events
+        self.bind("<Button-1>", self._on_pan_start)
+        self.bind("<B1-Motion>", self._on_pan_drag)
+        self.bind("<ButtonRelease-1>", self._on_pan_end)
+        
+        # Leertaste-Events (werden vom Hauptfenster behandelt)
+        self.focus_set()  # Damit Canvas Tastatur-Events empfangen kann
 
     def clear(self):
         self.delete("all")
@@ -635,7 +686,11 @@ class BubbleCanvas(tk.Canvas):
             self.after(50, lambda: self.draw_bubbles(data_list, label_key, bubble_type, on_click, assignee_getter))
             return
 
-        radius = 80 if bubble_type == "project" else 70
+        base_radius = 80 if bubble_type == "project" else 70
+        radius = self.get_effective_radius(base_radius)
+        
+        # Update zoom mode from config
+        self.zoom_mode = self.app_config.get('ui', {}).get('zoom_mode', 'dynamic')
         
         # Filtere gültige Objekte (Fokus-Modus berücksichtigen)
         valid_objects = []
@@ -661,17 +716,38 @@ class BubbleCanvas(tk.Canvas):
         center_x = w // 2
         center_y = h // 2
         
-        # Berechne kreisförmige Anordnung
+        # Positionierung basierend auf Zoom-Modus
         num_bubbles = len(valid_objects)
-        if num_bubbles == 1:
-            # Einzelne Bubble in der Mitte
-            positions = [(center_x, center_y)]
+        if self.zoom_mode == 'map':
+            # Landkarten-Modus: Startgröße 0.7 und feste Positionen
+            self.zoom_level = self.map_start_zoom
+            radius = self.get_effective_radius(base_radius)
+            positions = self._calculate_map_positions(valid_objects, bubble_type, center_x, center_y, w, h, radius)
         else:
-            # Kreisförmige Anordnung
-            positions = self._calculate_circular_positions(num_bubbles, center_x, center_y, w, h, radius)
+            # Dynamischer Modus: Kreisförmige Anordnung
+            if num_bubbles == 1:
+                # Einzelne Bubble in der Mitte
+                positions = [(center_x, center_y)]
+            else:
+                # Kreisförmige Anordnung mit Deadline-Priorität
+                positions = self._calculate_circular_positions(num_bubbles, center_x, center_y, w, h, radius, valid_objects)
+                
+                # Prüfe auf Überlappungen und zoome automatisch raus wenn nötig
+                max_auto_zoom_attempts = 5
+                for attempt in range(max_auto_zoom_attempts):
+                    if not self._check_for_overlaps_and_auto_zoom(positions, radius):
+                        break
+                    # Neu berechnen mit kleinerem Radius
+                    radius = self.get_effective_radius(base_radius)
+                    positions = self._calculate_circular_positions(num_bubbles, center_x, center_y, w, h, radius)
 
         for i, obj in enumerate(valid_objects):
             x, y = positions[i]
+            
+            # Offset anwenden (Landkarten-Modus oder Pan-Modus)
+            if self.zoom_mode == 'map' or self.pan_mode:
+                x += self.map_offset_x
+                y += self.map_offset_y
             
             label = obj.get(label_key, "")[:18]
             color = obj.get("color") or "#222222"
@@ -683,28 +759,36 @@ class BubbleCanvas(tk.Canvas):
                 'current_x': x,  # Aktuelle Position für kontinuierliche Animation
                 'current_y': y,  # Aktuelle Position für kontinuierliche Animation
                 'radius': radius,
+                'base_radius': base_radius,  # Speichere den ursprünglichen Radius für Skalierung
+                'bubble_type': bubble_type,  # Speichere den Bubble-Typ für Skalierung
                 'items': [],
                 'phase': random.uniform(0, 6.28),  # Zufällige Phase für individuelle Bewegung
                 'rotation_offset': 0,  # Rotations-Offset für Ringe
                 'ring_items': []  # Separate Liste für rotierende Ringe
             }
 
+            # Verwende den zoom-angepassten Radius für alle Kreise
+            effective_radius = self.get_effective_radius(base_radius)
+            
             if bubble_type == "project":
-                halo_items = self._draw_deadline_halo(x, y, radius, obj.get("deadline", ""), obj.get("project_id"))
+                halo_items = self._draw_deadline_halo(x, y, effective_radius, obj.get("deadline", ""), obj.get("project_id"))
                 if halo_items:
                     bubble_group['ring_items'].extend(halo_items)
-
+            
             if bubble_type == "project":
-                oval = self.create_oval(x-radius, y-radius, x+radius, y+radius, fill="#1a1a1a", outline=color or "#444444", width=4)
-                inner_ring = self.create_oval(x-radius+8, y-radius+8, x+radius-8, y-radius-8, fill="", outline="#ffffff", width=1)
+                oval = self.create_oval(x-effective_radius, y-effective_radius, x+effective_radius, y+effective_radius, fill="#1a1a1a", outline=color or "#444444", width=4, tags="world")
+                inner_ring = self.create_oval(x-effective_radius+8, y-effective_radius+8, x+effective_radius-8, y-effective_radius-8, fill="", outline="#ffffff", width=1, tags="world")
                 bubble_group['items'].extend([oval, inner_ring])
             else:
-                oval = self.create_oval(x-radius, y-radius, x+radius, y+radius, fill=color, outline="#555555", width=3)
-                inner_ring = self.create_oval(x-radius+6, y-radius+6, x+radius-6, y+radius-6, fill="", outline="#ffffff", width=1)
+                oval = self.create_oval(x-effective_radius, y-effective_radius, x+effective_radius, y+effective_radius, fill=color, outline="#555555", width=3, tags="world")
+                inner_ring = self.create_oval(x-effective_radius+6, y-effective_radius+6, x+effective_radius-6, y+effective_radius-6, fill="", outline="#ffffff", width=1, tags="world")
                 bubble_group['items'].extend([oval, inner_ring])
 
-            text_shadow = self.create_text(x+1, y+1, text=label, fill="#000000", font=("Helvetica", 12, "bold"), width=radius*1.6)
-            text = self.create_text(x, y, text=label, fill="#ffffff", font=("Helvetica", 12, "bold"), width=radius*1.6)
+            # Text-Größe basierend auf Zoom-Level anpassen
+            font_size = max(8, int(12 * self.zoom_level))  # Mindestens 8px, skaliert mit Zoom
+            text_width = effective_radius * 1.6  # Text-Breite auch mit Zoom skalieren
+            text_shadow = self.create_text(x+1, y+1, text=label, fill="#000000", font=("Helvetica", font_size, "bold"), width=text_width, tags="world")
+            text = self.create_text(x, y, text=label, fill="#ffffff", font=("Helvetica", font_size, "bold"), width=text_width, tags="world")
             bubble_group['items'].extend([text_shadow, text])
 
             if bubble_type == "task":
@@ -720,8 +804,8 @@ class BubbleCanvas(tk.Canvas):
                     assignees = assignees[:4]
                     
                     if assignees:
-                        self._draw_multi_assignee_ring(x, y, radius, assignees, bubble_group)
-                progress_items = self._draw_progress_ring(x, y, radius, obj)
+                        self._draw_multi_assignee_ring(x, y, effective_radius, assignees, bubble_group)
+                progress_items = self._draw_progress_ring(x, y, effective_radius, obj)
                 if progress_items:
                     bubble_group['ring_items'].extend(progress_items)
 
@@ -737,7 +821,7 @@ class BubbleCanvas(tk.Canvas):
 
             # Asteroiden für To-Do-Items hinzufügen (nur für Tasks)
             if bubble_type == "task":
-                self._add_asteroids_to_bubble(bubble_group, obj, x, y, radius)
+                self._add_asteroids_to_bubble(bubble_group, obj, x, y, effective_radius)
             
             # Bubble-Gruppe zur Liste hinzufügen
             self.bubble_groups.append(bubble_group)
@@ -750,6 +834,67 @@ class BubbleCanvas(tk.Canvas):
         # Restore animation state if it was previously active
         if was_floating_active:
             self.floating_offset = current_floating_offset
+        
+        # Im Landkarten-Modus: Echtzeit-Skalierung nach dem Zeichnen anwenden
+        if self.zoom_mode == 'map' and self.zoom_level != 1.0:
+            # Echtzeit-Skalierung aller Bubble-Objekte
+            if hasattr(self, 'bubble_groups'):
+                for bubble_group in self.bubble_groups:
+                    if 'base_radius' not in bubble_group:
+                        continue
+                    
+                    # Radius skalieren
+                    base_radius = bubble_group['base_radius']
+                    new_radius = int(base_radius * self.zoom_level)
+                    bubble_group['radius'] = new_radius
+                    
+                    # Position mit Pan-Offset und Zoom-Skalierung
+                    base_x = bubble_group['base_x']
+                    base_y = bubble_group['base_y']
+                    # Abstände skalieren mit dem Zoom-Level
+                    scaled_x = base_x * self.zoom_level
+                    scaled_y = base_y * self.zoom_level
+                    bubble_group['current_x'] = scaled_x + self.map_offset_x
+                    bubble_group['current_y'] = scaled_y + self.map_offset_y
+                    
+                    # Alle Items in der Bubble-Gruppe aktualisieren
+                    for item in bubble_group.get('items', []):
+                        if self.type(item) in ['oval', 'arc']:
+                            # Koordinaten aktualisieren
+                            x = bubble_group['current_x']
+                            y = bubble_group['current_y']
+                            radius = bubble_group['radius']
+                            
+                            if self.type(item) == 'oval':
+                                self.coords(item, x - radius, y - radius, x + radius, y + radius)
+                            elif self.type(item) == 'arc':
+                                self.coords(item, x - radius, y - radius, x + radius, y + radius)
+                    
+                    # Text-Items aktualisieren
+                    for item in bubble_group.get('items', []):
+                        if self.type(item) == 'text':
+                            # Schriftgröße skalieren
+                            base_font_size = 12
+                            new_size = max(6, int(base_font_size * self.zoom_level))
+                            self.itemconfig(item, font=("Helvetica", new_size, "bold"))
+                            
+                            # Position aktualisieren
+                            x = bubble_group['current_x']
+                            y = bubble_group['current_y']
+                            self.coords(item, x, y)
+                    
+                    # Ring-Items aktualisieren
+                    for item in bubble_group.get('ring_items', []):
+                        if self.type(item) in ['oval', 'arc']:
+                            x = bubble_group['current_x']
+                            y = bubble_group['current_y']
+                            radius = bubble_group['radius']
+                            ring_radius = radius + 8
+                            
+                            if self.type(item) == 'oval':
+                                self.coords(item, x - ring_radius, y - ring_radius, x + ring_radius, y + ring_radius)
+                            elif self.type(item) == 'arc':
+                                self.coords(item, x - ring_radius, y - ring_radius, x + ring_radius, y + ring_radius)
 
     def _draw_multi_assignee_ring(self, x, y, radius, assignees, bubble_group):
         """Draws a ring around the bubble with proportional color segments for multiple assignees."""
@@ -763,7 +908,7 @@ class BubbleCanvas(tk.Canvas):
         if num_assignees == 1:
             color = config.ASSIGNEE_COLORS.get(assignees[0], "#777777")
             ring_item = self.create_oval(x - radius, y - radius, x + radius, y + radius, 
-                                       outline=color, width=5)
+                                       outline=color, width=5, tags="world")
             bubble_group['items'].append(ring_item)
             return
         
@@ -787,7 +932,7 @@ class BubbleCanvas(tk.Canvas):
             arc_item = self.create_arc(
                 x - radius, y - radius, x + radius, y + radius,
                 start=start_angle, extent=extent_angle,
-                outline=color, width=5, style="arc"
+                outline=color, width=5, style="arc", tags="world"
             )
             bubble_group['items'].append(arc_item)
 
@@ -815,8 +960,9 @@ class BubbleCanvas(tk.Canvas):
             asteroid_x = x + asteroid_distance * math.cos(asteroid_angle)
             asteroid_y = y + asteroid_distance * math.sin(asteroid_angle)
             
-            # Asteroid-Größe basierend auf To-Do-Status
-            asteroid_size = 5 if item.get("done", False) else 7
+            # Asteroid-Größe basierend auf To-Do-Status und Zoom-Level
+            base_asteroid_size = 5 if item.get("done", False) else 7
+            asteroid_size = int(base_asteroid_size * self.zoom_level)
             asteroid_color = "#000000" if item.get("done", False) else "#ff8800"  # Erledigte sind schwarz
             
             # Asteroid zeichnen (größer und sichtbarer)
@@ -824,7 +970,7 @@ class BubbleCanvas(tk.Canvas):
             asteroid = self.create_oval(
                 asteroid_x - asteroid_size, asteroid_y - asteroid_size,
                 asteroid_x + asteroid_size, asteroid_y + asteroid_size,
-                fill=asteroid_color, outline=outline_color, width=2
+                fill=asteroid_color, outline=outline_color, width=2, tags="world"
             )
             
             # Asteroid-Daten speichern
@@ -864,17 +1010,26 @@ class BubbleCanvas(tk.Canvas):
         for bubble_group in self.bubble_groups:
             if 'asteroids' not in bubble_group:
                 continue
+            
+            # Aktualisiere die Zentrum-Position der Asteroiden basierend auf der aktuellen Bubble-Position
+            current_x = bubble_group.get('current_x', bubble_group.get('center_x', 0))
+            current_y = bubble_group.get('current_y', bubble_group.get('center_y', 0))
                 
             for asteroid_data in bubble_group['asteroids']:
                 # Asteroid um die Bubble rotieren lassen (Geschwindigkeit basierend auf Schwebeeinstellung)
                 asteroid_data['angle'] += asteroid_data['speed'] * floating_speed * 2
+                
+                # Zentrum-Position aktualisieren
+                asteroid_data['center_x'] = current_x
+                asteroid_data['center_y'] = current_y
                 
                 # Neue Position berechnen
                 new_x = asteroid_data['center_x'] + asteroid_data['distance'] * math.cos(asteroid_data['angle'])
                 new_y = asteroid_data['center_y'] + asteroid_data['distance'] * math.sin(asteroid_data['angle'])
                 
                 # Asteroid bewegen (nur die Asteroiden, nicht die Bubbles)
-                asteroid_size = 5 if asteroid_data.get('done', False) else 7
+                base_asteroid_size = 5 if asteroid_data.get('done', False) else 7
+                asteroid_size = int(base_asteroid_size * self.zoom_level)
                 self.coords(asteroid_data['item'], 
                            new_x - asteroid_size, new_y - asteroid_size, 
                            new_x + asteroid_size, new_y + asteroid_size)
@@ -882,43 +1037,472 @@ class BubbleCanvas(tk.Canvas):
         # Animation fortsetzen (gleiche Framerate wie Schwebebewegung für maximale Flüssigkeit)
         self.asteroid_animation_id = self.after(6, self._animate_asteroids)  # Gleiche Framerate wie floating
 
-    def _calculate_circular_positions(self, num_bubbles, center_x, center_y, canvas_width, canvas_height, bubble_radius):
-        """Berechnet kreisförmige Positionen für Bubbles."""
+    def _calculate_circular_positions(self, num_bubbles, center_x, center_y, canvas_width, canvas_height, bubble_radius, data_list=None):
+        """Berechnet Positionen basierend auf Task-Anzahl - höchste Anzahl in der Mitte."""
+        import math
+        import random
+        
+        if num_bubbles <= 0:
+            return []
+        
+        if num_bubbles == 1:
+            return [(center_x, center_y)]
+        
         positions = []
+        min_distance = bubble_radius * 2.5  # Mindestabstand zwischen Kreisen
         
-        # Berechne optimalen Radius für den Kreis basierend auf Canvas-Größe
-        max_radius = min(canvas_width, canvas_height) // 3
-        min_radius = bubble_radius * 2
-        
-        # Dynamischer Radius basierend auf Anzahl der Bubbles
-        if num_bubbles <= 3:
-            circle_radius = min_radius + 50
-        elif num_bubbles <= 6:
-            circle_radius = min_radius + 80
+        # Sortiere Bubbles nach Task-Anzahl (höchste zuerst)
+        if data_list:
+            # Berechne Task-Anzahl für jedes Projekt
+            priority_list = []
+            for i, obj in enumerate(data_list):
+                task_count = self._get_task_count_for_project(obj)
+                priority_list.append((i, task_count, obj))
+            
+            # Sortiere nach Task-Anzahl (höchste zuerst = näher zur Mitte)
+            priority_list.sort(key=lambda x: x[1], reverse=True)
         else:
-            circle_radius = min_radius + 120
+            # Fallback: zufällige Reihenfolge
+            priority_list = [(i, 0, None) for i in range(num_bubbles)]
         
-        # Begrenze auf Canvas-Größe
-        circle_radius = min(circle_radius, max_radius)
-        
-        # Berechne Winkel zwischen den Bubbles
-        angle_step = (2 * math.pi) / num_bubbles
-        
-        for i in range(num_bubbles):
-            # Berechne Winkel für diese Bubble
-            angle = i * angle_step + random.uniform(-0.2, 0.2)  # Kleine Zufälligkeit für natürlicheren Look
+        # Platziere Bubbles basierend auf Task-Anzahl
+        for priority_index, (original_index, task_count, obj) in enumerate(priority_list):
+            max_attempts = 200  # Mehr Versuche für bessere Positionierung
+            position_found = False
             
-            # Berechne Position
-            x = center_x + circle_radius * math.cos(angle)
-            y = center_y + circle_radius * math.sin(angle)
+            # Bestimme Distanz zur Mitte basierend auf Priorität
+            if priority_index == 0:  # Höchste Task-Anzahl = Mitte
+                preferred_distance = random.uniform(20, 60)
+            elif priority_index < 4:  # Top 4 = nah zur Mitte
+                preferred_distance = random.uniform(80, 120)
+            elif priority_index < 8:  # Nächste 4 = mittlere Distanz
+                preferred_distance = random.uniform(140, 200)
+            elif priority_index < 12:  # Weitere 4 = weiter weg
+                preferred_distance = random.uniform(220, 300)
+            else:  # Rest = am weitesten weg
+                preferred_distance = random.uniform(320, 500)
             
-            # Stelle sicher, dass die Bubble im Canvas bleibt
-            x = max(bubble_radius, min(canvas_width - bubble_radius, x))
-            y = max(bubble_radius, min(canvas_height - bubble_radius, y))
+            for attempt in range(max_attempts):
+                if attempt == 0:
+                    # Erste Versuche: bevorzugte Distanz
+                    distance_from_center = preferred_distance
+                    angle = random.uniform(0, 2 * math.pi)
+                    x = center_x + distance_from_center * math.cos(angle)
+                    y = center_y + distance_from_center * math.sin(angle)
+                elif attempt < 50:
+                    # Variation um die bevorzugte Distanz
+                    distance_from_center = preferred_distance + random.uniform(-30, 30)
+                    angle = random.uniform(0, 2 * math.pi)
+                    x = center_x + distance_from_center * math.cos(angle)
+                    y = center_y + distance_from_center * math.sin(angle)
+                elif attempt < 100:
+                    # Erweiterte Suche um die bevorzugte Distanz
+                    distance_from_center = preferred_distance + random.uniform(-60, 60)
+                    angle = random.uniform(0, 2 * math.pi)
+                    x = center_x + distance_from_center * math.cos(angle)
+                    y = center_y + distance_from_center * math.sin(angle)
+                else:
+                    # Weite Suche - kann über den Bildschirmrand hinausgehen
+                    distance_from_center = random.uniform(50, 800)
+                    angle = random.uniform(0, 2 * math.pi)
+                    x = center_x + distance_from_center * math.cos(angle)
+                    y = center_y + distance_from_center * math.sin(angle)
+                
+                # KEINE Rand-Beschränkung - Kreise können über den Display hinausgehen
+                # Nur minimale Sicherheitsabstände
+                x = max(bubble_radius, min(canvas_width + bubble_radius * 2, x))
+                y = max(bubble_radius, min(canvas_height + bubble_radius * 2, y))
+                
+                # STRENGE Überlappungsprüfung - KEINE Überschneidungen erlaubt
+                overlaps = False
+                for existing_x, existing_y in positions:
+                    distance = math.sqrt((x - existing_x)**2 + (y - existing_y)**2)
+                    if distance < min_distance:
+                        overlaps = True
+                        break
+                
+                # Wenn keine Überlappung, Position verwenden
+                if not overlaps:
+                    # Füge kleine organische Variation hinzu
+                    x += random.uniform(-5, 5)
+                    y += random.uniform(-5, 5)
+                    
+                    positions.append((int(x), int(y)))
+                    position_found = True
+                    break
             
-            positions.append((int(x), int(y)))
+            # Wenn keine Position gefunden, verwende die letzte versuchte Position
+            if not position_found:
+                positions.append((int(x), int(y)))
         
         return positions
+    
+    def _get_task_count_for_project(self, project_obj):
+        """Berechnet die Anzahl der Tasks für ein Projekt."""
+        try:
+            if hasattr(self, 'model') and self.model:
+                project_id = project_obj.get('project_id')
+                if project_id:
+                    tasks = self.model.get_tasks_for_project(project_id)
+                    return len(tasks) if tasks else 0
+            return 0
+        except:
+            return 0
+    
+    def _calculate_deadline_priority(self, deadline_str):
+        """Berechnet die Deadline-Priorität (niedrigere Zahl = höhere Priorität)."""
+        if not deadline_str:
+            return 999  # Keine Deadline = niedrigste Priorität
+        
+        try:
+            from datetime import datetime
+            # Parse Deadline (Format: DD.MM.YYYY)
+            deadline_date = datetime.strptime(deadline_str, "%d.%m.%Y")
+            today = datetime.now()
+            
+            # Berechne Tage bis zur Deadline
+            days_until_deadline = (deadline_date - today).days
+            
+            # Priorität: je weniger Tage, desto höher die Priorität (niedrigere Zahl)
+            if days_until_deadline < 0:
+                return -1000  # Überfällig = höchste Priorität
+            elif days_until_deadline == 0:
+                return 0  # Heute fällig
+            elif days_until_deadline <= 7:
+                return days_until_deadline  # Diese Woche
+            elif days_until_deadline <= 30:
+                return days_until_deadline + 10  # Dieser Monat
+            else:
+                return days_until_deadline + 50  # Später
+                
+        except (ValueError, TypeError):
+            return 999  # Ungültiges Format = niedrigste Priorität
+
+    def set_zoom_level(self, zoom_level):
+        """Setzt den Zoom-Level und skaliert alle Elemente in Echtzeit."""
+        old_zoom = self.zoom_level
+        self.zoom_level = max(self.min_zoom, min(self.max_zoom, zoom_level))
+        
+        # Aktualisiere den Slider in der Hauptanwendung
+        if hasattr(self, 'master') and hasattr(self.master, 'zoom_var'):
+            self.master.zoom_var.set(self.zoom_level)
+        
+        # Im Landkarten-Modus: Echtzeit-Skalierung wie bei Asteroiden
+        if self.zoom_mode == 'map':
+            # Echtzeit-Skalierung aller Bubble-Objekte
+            if hasattr(self, 'bubble_groups'):
+                for bubble_group in self.bubble_groups:
+                    if 'base_radius' not in bubble_group:
+                        continue
+                    
+                    # Radius skalieren
+                    base_radius = bubble_group['base_radius']
+                    new_radius = int(base_radius * self.zoom_level)
+                    bubble_group['radius'] = new_radius
+                    
+                    # Position mit Pan-Offset und Zoom-Skalierung
+                    base_x = bubble_group['base_x']
+                    base_y = bubble_group['base_y']
+                    # Abstände skalieren mit dem Zoom-Level
+                    scaled_x = base_x * self.zoom_level
+                    scaled_y = base_y * self.zoom_level
+                    bubble_group['current_x'] = scaled_x + self.map_offset_x
+                    bubble_group['current_y'] = scaled_y + self.map_offset_y
+                    
+                    # Alle Items in der Bubble-Gruppe aktualisieren
+                    for item in bubble_group.get('items', []):
+                        if self.type(item) in ['oval', 'arc']:
+                            # Koordinaten aktualisieren
+                            x = bubble_group['current_x']
+                            y = bubble_group['current_y']
+                            radius = bubble_group['radius']
+                            
+                            if self.type(item) == 'oval':
+                                self.coords(item, x - radius, y - radius, x + radius, y + radius)
+                            elif self.type(item) == 'arc':
+                                self.coords(item, x - radius, y - radius, x + radius, y + radius)
+                    
+                    # Text-Items aktualisieren
+                    for item in bubble_group.get('items', []):
+                        if self.type(item) == 'text':
+                            # Schriftgröße skalieren
+                            base_font_size = 12
+                            new_size = max(6, int(base_font_size * self.zoom_level))
+                            self.itemconfig(item, font=("Helvetica", new_size, "bold"))
+                            
+                            # Position aktualisieren
+                            x = bubble_group['current_x']
+                            y = bubble_group['current_y']
+                            self.coords(item, x, y)
+                    
+                    # Ring-Items aktualisieren
+                    for item in bubble_group.get('ring_items', []):
+                        if self.type(item) in ['oval', 'arc']:
+                            x = bubble_group['current_x']
+                            y = bubble_group['current_y']
+                            radius = bubble_group['radius']
+                            ring_radius = radius + 8
+                            
+                            if self.type(item) == 'oval':
+                                self.coords(item, x - ring_radius, y - ring_radius, x + ring_radius, y + ring_radius)
+                            elif self.type(item) == 'arc':
+                                self.coords(item, x - ring_radius, y - ring_radius, x + ring_radius, y + ring_radius)
+        else:
+            # Dynamischer Modus: Normale Skalierung
+            self._scale_existing_bubbles()
+    
+    def get_effective_radius(self, base_radius):
+        """Gibt den effektiven Radius basierend auf dem Zoom-Level zurück."""
+        return int(base_radius * self.zoom_level)
+    
+    def _scale_existing_bubbles(self):
+        """Skaliert alle bestehenden Bubbles in Echtzeit und drückt sie gegenseitig weg."""
+        import math
+        
+        # Erste Phase: Skaliere alle Radien
+        for bubble_group in self.bubble_groups:
+            if 'base_radius' not in bubble_group:
+                continue
+                
+            base_radius = bubble_group['base_radius']
+            new_radius = self.get_effective_radius(base_radius)
+            bubble_group['radius'] = new_radius
+        
+        # Zweite Phase: Positionierung basierend auf Zoom-Modus
+        if self.zoom_mode == 'map':
+            # Landkarten-Modus: Keine Positionierung hier, wird durch Canvas-Scale gemacht
+            # Nur Pan-Offset für Navigation anwenden
+            for bubble_group in self.bubble_groups:
+                if 'base_radius' not in bubble_group:
+                    continue
+                # Nur Pan-Offset anwenden, keine Skalierung der Positionen
+                base_x = bubble_group['base_x']
+                base_y = bubble_group['base_y']
+                bubble_group['current_x'] = base_x + self.map_offset_x
+                bubble_group['current_y'] = base_y + self.map_offset_y
+        elif self.pan_mode:
+            # Pan-Modus: Nur Offset anwenden
+            for bubble_group in self.bubble_groups:
+                if 'base_radius' not in bubble_group:
+                    continue
+                base_x = bubble_group['base_x']
+                base_y = bubble_group['base_y']
+                bubble_group['current_x'] = base_x + self.map_offset_x
+                bubble_group['current_y'] = base_y + self.map_offset_y
+        else:
+            # Dynamischer Modus: Drücke Kreise weg
+            self._push_bubbles_apart()
+        
+        # Dritte Phase: Zeichne alle Bubbles mit neuen Positionen
+        for bubble_group in self.bubble_groups:
+            if 'base_radius' not in bubble_group:
+                continue
+                
+            new_radius = bubble_group['radius']
+            x, y = bubble_group['current_x'], bubble_group['current_y']
+            
+            # Offset bereits in der Positionierung angewendet, nicht nochmal
+            
+            # Skaliere alle Oval-Elemente (Hauptkreis und innerer Ring)
+            for i, item in enumerate(bubble_group['items']):
+                if self.type(item) == 'oval':
+                    if i == 0:  # Hauptkreis
+                        self.coords(item, x-new_radius, y-new_radius, x+new_radius, y+new_radius)
+                    elif i == 1:  # Innerer Ring
+                        offset = 8 if bubble_group.get('bubble_type') == 'project' else 6
+                        self.coords(item, x-new_radius+offset, y-new_radius+offset, 
+                                   x+new_radius-offset, y+new_radius-offset)
+            
+            # Skaliere Text-Größe und -Breite
+            font_size = max(8, int(12 * self.zoom_level))  # Mindestens 8px, skaliert mit Zoom
+            text_width = new_radius * 1.6
+            
+            for item in bubble_group['items']:
+                if self.type(item) == 'text':
+                    # Text-Größe und -Breite anpassen
+                    self.itemconfig(item, font=("Helvetica", font_size, "bold"), width=text_width)
+            
+            # Skaliere Asteroiden-Orbits in Echtzeit
+            if 'asteroids' in bubble_group:
+                for asteroid_data in bubble_group['asteroids']:
+                    # Aktualisiere die Orbit-Distanz basierend auf dem neuen Radius
+                    asteroid_data['distance'] = new_radius + 30 + (bubble_group['asteroids'].index(asteroid_data) * 5)
+                    # Aktualisiere die Zentrum-Position
+                    asteroid_data['center_x'] = x
+                    asteroid_data['center_y'] = y
+    
+    def _redraw_all_bubbles(self):
+        """Zeichnet alle Bubbles mit aktuellen Positionen und Größen."""
+        for bubble_group in self.bubble_groups:
+            if 'base_radius' not in bubble_group:
+                continue
+                
+            new_radius = bubble_group['radius']
+            x, y = bubble_group['current_x'], bubble_group['current_y']
+            
+            # Skaliere alle Oval-Elemente (Hauptkreis und innerer Ring)
+            for i, item in enumerate(bubble_group['items']):
+                if self.type(item) == 'oval':
+                    if i == 0:  # Hauptkreis
+                        self.coords(item, x-new_radius, y-new_radius, x+new_radius, y+new_radius)
+                    elif i == 1:  # Innerer Ring
+                        offset = 8 if bubble_group.get('bubble_type') == 'project' else 6
+                        self.coords(item, x-new_radius+offset, y-new_radius+offset, 
+                                   x+new_radius-offset, y+new_radius-offset)
+            
+            # Skaliere Text-Größe und -Breite
+            font_size = max(8, int(12 * self.zoom_level))  # Mindestens 8px, skaliert mit Zoom
+            text_width = new_radius * 1.6
+            
+            for item in bubble_group['items']:
+                if self.type(item) == 'text':
+                    # Text-Größe und -Breite anpassen
+                    self.itemconfig(item, font=("Helvetica", font_size, "bold"), width=text_width)
+            
+            # Skaliere Asteroiden-Orbits in Echtzeit
+            if 'asteroids' in bubble_group:
+                for asteroid_data in bubble_group['asteroids']:
+                    # Aktualisiere die Orbit-Distanz basierend auf dem neuen Radius
+                    asteroid_data['distance'] = new_radius + 30 + (bubble_group['asteroids'].index(asteroid_data) * 5)
+                    # Aktualisiere die Zentrum-Position
+                    asteroid_data['center_x'] = x
+                    asteroid_data['center_y'] = y
+    
+    def _push_bubbles_apart(self):
+        """Drückt Bubbles gegenseitig weg um Überlappungen zu vermeiden, bevorzugt Positionen im Fenster."""
+        import math
+        
+        max_iterations = 50
+        canvas_width = self.winfo_width()
+        canvas_height = self.winfo_height()
+        
+        for iteration in range(max_iterations):
+            overlaps_found = False
+            
+            # Prüfe alle Bubbles auf Überlappungen
+            for i, bubble1 in enumerate(self.bubble_groups):
+                if 'current_x' not in bubble1:
+                    continue
+                    
+                x1, y1 = bubble1['current_x'], bubble1['current_y']
+                r1 = bubble1.get('radius', 0)
+                
+                for j, bubble2 in enumerate(self.bubble_groups[i+1:], i+1):
+                    if 'current_x' not in bubble2:
+                        continue
+                        
+                    x2, y2 = bubble2['current_x'], bubble2['current_y']
+                    r2 = bubble2.get('radius', 0)
+                    
+                    # Berechne Distanz zwischen den Zentren
+                    distance = math.sqrt((x1 - x2)**2 + (y1 - y2)**2)
+                    min_required_distance = (r1 + r2) * 1.1  # 10% Puffer
+                    
+                    if distance < min_required_distance:
+                        overlaps_found = True
+                        
+                        # Berechne Richtungsvektor zwischen den Bubbles
+                        if distance > 0:
+                            dx = (x2 - x1) / distance
+                            dy = (y2 - y1) / distance
+                        else:
+                            # Falls sie exakt übereinander sind, zufällige Richtung
+                            angle = math.pi * 2 * (i / len(self.bubble_groups))
+                            dx = math.cos(angle)
+                            dy = math.sin(angle)
+                        
+                        # Berechne wie weit sie auseinander müssen
+                        push_distance = (min_required_distance - distance) / 2
+                        
+                        # Neue Positionen berechnen
+                        new_x1 = x1 - dx * push_distance
+                        new_y1 = y1 - dy * push_distance
+                        new_x2 = x2 + dx * push_distance
+                        new_y2 = y2 + dy * push_distance
+                        
+                        # Prüfe ob neue Positionen im Fenster sind
+                        bubble1_in_window = self._is_position_in_window(new_x1, new_y1, r1, canvas_width, canvas_height)
+                        bubble2_in_window = self._is_position_in_window(new_x2, new_y2, r2, canvas_width, canvas_height)
+                        
+                        # Versuche alternative Positionen wenn eine Bubble außerhalb wäre
+                        if not bubble1_in_window or not bubble2_in_window:
+                            # Versuche andere Richtungen zu finden
+                            alternative_found = False
+                            for angle_offset in [0, math.pi/4, math.pi/2, 3*math.pi/4, math.pi, 5*math.pi/4, 3*math.pi/2, 7*math.pi/4]:
+                                test_dx = math.cos(angle_offset)
+                                test_dy = math.sin(angle_offset)
+                                
+                                test_x1 = x1 - test_dx * push_distance
+                                test_y1 = y1 - test_dy * push_distance
+                                test_x2 = x2 + test_dx * push_distance
+                                test_y2 = y2 + test_dy * push_distance
+                                
+                                if (self._is_position_in_window(test_x1, test_y1, r1, canvas_width, canvas_height) and
+                                    self._is_position_in_window(test_x2, test_y2, r2, canvas_width, canvas_height)):
+                                    new_x1, new_y1 = test_x1, test_y1
+                                    new_x2, new_y2 = test_x2, test_y2
+                                    alternative_found = True
+                                    break
+                            
+                            # Falls keine Alternative gefunden, versuche eine Bubble im Fenster zu halten
+                            if not alternative_found:
+                                if not bubble1_in_window and bubble2_in_window:
+                                    # Halte Bubble2 im Fenster, verschiebe Bubble1
+                                    new_x1 = x1 - dx * push_distance * 2
+                                    new_y1 = y1 - dy * push_distance * 2
+                                elif bubble1_in_window and not bubble2_in_window:
+                                    # Halte Bubble1 im Fenster, verschiebe Bubble2
+                                    new_x2 = x2 + dx * push_distance * 2
+                                    new_y2 = y2 + dy * push_distance * 2
+                        
+                        # Aktualisiere Positionen
+                        bubble1['current_x'] = new_x1
+                        bubble1['current_y'] = new_y1
+                        bubble2['current_x'] = new_x2
+                        bubble2['current_y'] = new_y2
+            
+            if not overlaps_found:
+                break
+    
+    def _is_position_in_window(self, x, y, radius, canvas_width, canvas_height):
+        """Prüft ob eine Position mit gegebenem Radius im Fenster liegt."""
+        return (x - radius >= 0 and x + radius <= canvas_width and 
+                y - radius >= 0 and y + radius <= canvas_height)
+    
+    
+    def _check_for_overlaps_and_auto_zoom(self, positions, bubble_radius):
+        """Prüft auf Überlappungen und zoomt automatisch für optimale Größe."""
+        import math
+        
+        if not self.auto_zoom_enabled:
+            return False
+            
+        min_distance = bubble_radius * 2.5
+        
+        # Prüfe alle Bubbles auf Überlappungen
+        has_overlaps = False
+        for i, (x1, y1) in enumerate(positions):
+            for j, (x2, y2) in enumerate(positions[i+1:], i+1):
+                distance = math.sqrt((x1 - x2)**2 + (y1 - y2)**2)
+                if distance < min_distance:
+                    has_overlaps = True
+                    break
+            if has_overlaps:
+                break
+        
+        if has_overlaps:
+            # Überlappung gefunden - zoom raus
+            new_zoom = self.zoom_level * 0.8  # 20% kleiner
+            if new_zoom >= self.min_zoom:
+                self.set_zoom_level(new_zoom)
+                return True
+        else:
+            # Keine Überlappungen - versuche zu vergrößern
+            new_zoom = self.zoom_level * 1.1  # 10% größer
+            if new_zoom <= self.max_zoom:
+                self.set_zoom_level(new_zoom)
+                return True
+        return False
 
     def _calculate_project_workload(self, project_id):
         """Berechnet die Arbeitslast eines Projekts basierend auf Tasks und ToDos."""
@@ -984,7 +1568,7 @@ class BubbleCanvas(tk.Canvas):
             for i in range(num_rings):
                 arc_radius = halo_radius + i * 5
                 for start_angle in range(0, 360, 45):
-                    item = self.create_arc(x-arc_radius, y-arc_radius, x+arc_radius, y+arc_radius, start=start_angle, extent=30, outline=color, width=2, style="arc")
+                    item = self.create_arc(x-arc_radius, y-arc_radius, x+arc_radius, y+arc_radius, start=start_angle, extent=30, outline=color, width=2, style="arc", tags="world")
                     halo_items.append(item)
             return halo_items
         except: 
@@ -999,10 +1583,10 @@ class BubbleCanvas(tk.Canvas):
         ring_items = []
         ring_radius = radius + 8
         progress_angle = int(360 * progress / 100)
-        ring_items.append(self.create_arc(x - ring_radius, y - ring_radius, x + ring_radius, y + ring_radius, start=0, extent=360, outline="#333333", width=3, style="arc"))
+        ring_items.append(self.create_arc(x - ring_radius, y - ring_radius, x + ring_radius, y + ring_radius, start=0, extent=360, outline="#333333", width=3, style="arc", tags="world"))
         progress_color = "#00ff88" if progress == 100 else "#0088ff"
-        ring_items.append(self.create_arc(x - ring_radius, y - ring_radius, x + ring_radius, y + ring_radius, start=90, extent=progress_angle, outline=progress_color, width=3, style="arc"))
-        ring_items.append(self.create_text(x, y + ring_radius + 15, text=f"{progress}%", fill="white", font=("Helvetica", 8, "bold")))
+        ring_items.append(self.create_arc(x - ring_radius, y - ring_radius, x + ring_radius, y + ring_radius, start=90, extent=progress_angle, outline=progress_color, width=3, style="arc", tags="world"))
+        ring_items.append(self.create_text(x, y + ring_radius + 15, text=f"{progress}%", fill="white", font=("Helvetica", 8, "bold"), tags="world"))
         return ring_items
 
     def _calculate_task_progress(self, task):
@@ -1028,6 +1612,214 @@ class BubbleCanvas(tk.Canvas):
         self._hide_tooltip()
 
     def _on_mouse_leave(self, event): self._hide_tooltip()
+    
+    def _on_mouse_wheel(self, event):
+        """Mausrad-Zoom nur für dynamischen Modus."""
+        if self.zoom_mode == 'map':
+            # Im Landkarten-Modus: Mausrad deaktiviert, nur Slider
+            return
+            
+        # Nur für dynamischen Modus: Zoom auf Mausposition
+        zoom_factor = 1.1 if event.delta > 0 else 0.9
+        new_zoom = self.zoom_level * zoom_factor
+        new_zoom = max(self.min_zoom, min(self.max_zoom, new_zoom))
+        
+        if new_zoom != self.zoom_level:
+            mouse_x = event.x
+            mouse_y = event.y
+            old_zoom = self.zoom_level
+            
+            self.scale("world", mouse_x, mouse_y, zoom_factor, zoom_factor)
+            self.zoom_level = new_zoom
+            
+            zoom_ratio = new_zoom / old_zoom
+            self.map_offset_x = mouse_x - (mouse_x - self.map_offset_x) * zoom_ratio
+            self.map_offset_y = mouse_y - (mouse_y - self.map_offset_y) * zoom_ratio
+            
+            self._adjust_styles_after_zoom()
+            self.configure(scrollregion=self.bbox("world"))
+    
+    def _adjust_styles_after_zoom(self):
+        """Passt Linienbreiten und Schriftgrößen nach dem Zoom an."""
+        try:
+            # Alle "world" Objekte durchgehen
+            for item in self.find_withtag("world"):
+                item_type = self.type(item)
+                
+                if item_type == "text":
+                    # Schriftgröße anpassen - für Landkarten-Modus proportional
+                    if self.zoom_mode == 'map':
+                        # Für Landkarten-Modus: Texte werden bereits durch Canvas-Scale skaliert
+                        # Keine zusätzliche Schriftgrößen-Anpassung nötig
+                        pass
+                    else:
+                        # Für dynamischen Modus: Bestehende Logik
+                        current_font = self.itemcget(item, "font")
+                        if current_font:
+                            font_parts = current_font.split()
+                            if len(font_parts) >= 2:
+                                try:
+                                    base_size = int(font_parts[1])
+                                    new_size = max(6, int(base_size * self.zoom_level))
+                                    new_font = f"{font_parts[0]} {new_size} {font_parts[2] if len(font_parts) > 2 else ''}"
+                                    self.itemconfig(item, font=new_font)
+                                except (ValueError, IndexError):
+                                    pass
+                
+                elif item_type in ["oval", "arc"]:
+                    # Linienbreite anpassen
+                    if self.zoom_mode == 'map':
+                        # Für Landkarten-Modus: Linienbreiten werden bereits durch Canvas-Scale skaliert
+                        # Keine zusätzliche Linienbreiten-Anpassung nötig
+                        pass
+                    else:
+                        # Für dynamischen Modus: Bestehende Logik
+                        current_width = self.itemcget(item, "width")
+                        if current_width and current_width != "0":
+                            try:
+                                base_width = int(current_width)
+                                new_width = max(1, int(base_width * self.zoom_level))
+                                self.itemconfig(item, width=new_width)
+                            except ValueError:
+                                pass
+        except Exception as e:
+            # Fehler beim Style-Anpassen ignorieren
+            pass
+    
+    def _on_pan_start(self, event):
+        """Startet Pan-Navigation wenn Leertaste gedrückt ist."""
+        if self.pan_mode:
+            self.pan_start_x = event.x
+            self.pan_start_y = event.y
+            self.pan_start_offset_x = self.map_offset_x
+            self.pan_start_offset_y = self.map_offset_y
+            # Cursor ändern
+            self.config(cursor=self.pan_cursor)
+    
+    def _on_pan_drag(self, event):
+        """Führt Pan-Navigation durch."""
+        if self.pan_mode:
+            # Berechne Verschiebung
+            delta_x = event.x - self.pan_start_x
+            delta_y = event.y - self.pan_start_y
+            
+            # Aktualisiere Offset mit Begrenzung
+            self.map_offset_x = self.pan_start_offset_x + delta_x
+            self.map_offset_y = self.pan_start_offset_y + delta_y
+            
+            # Begrenze Offset auf vernünftige Werte
+            max_offset = 5000  # Maximaler Offset
+            self.map_offset_x = max(-max_offset, min(max_offset, self.map_offset_x))
+            self.map_offset_y = max(-max_offset, min(max_offset, self.map_offset_y))
+            
+            # Schnelle Position-Update ohne vollständiges Neuzeichnen
+            self._update_bubble_positions()
+    
+    def _on_pan_end(self, event):
+        """Beendet Pan-Navigation."""
+        if self.pan_mode:
+            # Cursor zurücksetzen
+            self.config(cursor="")
+    
+    def set_pan_mode(self, enabled):
+        """Aktiviert/deaktiviert Pan-Modus."""
+        self.pan_mode = enabled
+        if enabled:
+            self.config(cursor=self.pan_cursor)
+        else:
+            self.config(cursor="")
+    
+    def _update_bubble_positions(self):
+        """Aktualisiert alle Bubble-Positionen für flüssige Pan-Animation."""
+        for bubble_group in self.bubble_groups:
+            if 'base_radius' not in bubble_group:
+                continue
+                
+            # Berechne neue Position mit Offset und Zoom-Skalierung
+            base_x = bubble_group['base_x']
+            base_y = bubble_group['base_y']
+            
+            # Im Landkarten-Modus: Abstände skalieren mit Zoom-Level
+            if self.zoom_mode == 'map':
+                scaled_x = base_x * self.zoom_level
+                scaled_y = base_y * self.zoom_level
+                new_x = scaled_x + self.map_offset_x
+                new_y = scaled_y + self.map_offset_y
+            else:
+                # Dynamischer Modus: Normale Positionierung
+                new_x = base_x + self.map_offset_x
+                new_y = base_y + self.map_offset_y
+            
+            # Aktualisiere aktuelle Position
+            bubble_group['current_x'] = new_x
+            bubble_group['current_y'] = new_y
+            
+            # Aktualisiere alle Canvas-Elemente dieser Bubble
+            self._update_bubble_canvas_items(bubble_group)
+    
+    def _update_bubble_canvas_items(self, bubble_group):
+        """Aktualisiert alle Canvas-Elemente einer Bubble-Gruppe."""
+        try:
+            x = bubble_group['current_x']
+            y = bubble_group['current_y']
+            radius = bubble_group['radius']
+            
+            # Debug: Prüfe ob Koordinaten gültig sind
+            if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
+                return
+            if abs(x) > 10000 or abs(y) > 10000:  # Unrealistische Koordinaten
+                return
+            
+            # Aktualisiere alle Oval-Elemente (Hauptkreis und innerer Ring)
+            for i, item in enumerate(bubble_group['items']):
+                if self.type(item) == 'oval':
+                    if i == 0:  # Hauptkreis
+                        self.coords(item, x-radius, y-radius, x+radius, y+radius)
+                    elif i == 1:  # Innerer Ring
+                        offset = 8 if bubble_group.get('bubble_type') == 'project' else 6
+                        self.coords(item, x-radius+offset, y-radius+offset, 
+                                   x+radius-offset, y+radius-offset)
+            
+            # Aktualisiere Text-Position
+            for item in bubble_group['items']:
+                if self.type(item) == 'text':
+                    self.coords(item, x, y)
+            
+            # Aktualisiere Ring-Elemente
+            if 'ring_items' in bubble_group:
+                self._update_ring_items(bubble_group)
+                
+        except Exception as e:
+            # Falls ein Item nicht mehr existiert, ignorieren
+            pass
+    
+    def _update_ring_items(self, bubble_group):
+        """Aktualisiert Ring-Elemente (Deadline-Halos, Progress-Ringe) für Pan."""
+        try:
+            x = bubble_group['current_x']
+            y = bubble_group['current_y']
+            radius = bubble_group['radius']
+            
+            for i, item in enumerate(bubble_group['ring_items']):
+                if self.type(item) == 'arc':
+                    # Arc-Elemente (Deadline-Halos, Progress-Ringe)
+                    arc_radius = radius + 15 + (i % 3) * 5
+                    x1 = x - arc_radius
+                    y1 = y - arc_radius
+                    x2 = x + arc_radius
+                    y2 = y + arc_radius
+                    self.coords(item, x1, y1, x2, y2)
+                elif self.type(item) == 'oval':
+                    # Oval-Ringe
+                    ring_radius = radius + 8
+                    x1 = x - ring_radius
+                    y1 = y - ring_radius
+                    x2 = x + ring_radius
+                    y2 = y + ring_radius
+                    self.coords(item, x1, y1, x2, y2)
+        except Exception as e:
+            # Falls ein Item nicht mehr existiert, ignorieren
+            pass
 
     def _hide_tooltip(self):
         if self.tooltip:
@@ -1200,3 +1992,117 @@ class BubbleCanvas(tk.Canvas):
             except:
                 # Falls ein Item nicht mehr existiert, ignorieren
                 continue
+    
+    def _calculate_map_positions(self, valid_objects, bubble_type, center_x, center_y, w, h, radius):
+        """Berechnet feste Positionen für Landkarten-Modus."""
+        positions = []
+        
+        # Erstelle einen Schlüssel für diese Bubble-Art
+        bubble_key = f"{bubble_type}_{len(valid_objects)}"
+        
+        # Prüfe ob bereits feste Positionen existieren
+        if bubble_key in self.fixed_positions:
+            stored_positions = self.fixed_positions[bubble_key]
+            # Verwende gespeicherte Positionen, aber prüfe auf Änderungen
+            if len(stored_positions) == len(valid_objects):
+                return stored_positions
+        
+        # Lösche alte Positionen für neue Abstände
+        if bubble_key in self.fixed_positions:
+            del self.fixed_positions[bubble_key]
+        
+        # Neue Positionen berechnen
+        num_bubbles = len(valid_objects)
+        
+        if num_bubbles == 1:
+            # Einzelne Bubble in der Mitte
+            positions = [(center_x, center_y)]
+        elif num_bubbles <= 4:
+            # Kleine Anzahl: Quadratische Anordnung
+            positions = self._calculate_square_positions(num_bubbles, center_x, center_y, radius)
+        else:
+            # Größere Anzahl: Spiral-Anordnung von innen nach außen
+            positions = self._calculate_spiral_positions(num_bubbles, center_x, center_y, radius)
+        
+        # Speichere die Positionen für zukünftige Verwendung
+        self.fixed_positions[bubble_key] = positions
+        
+        return positions
+    
+    def _calculate_square_positions(self, num_bubbles, center_x, center_y, radius):
+        """Berechnet quadratische Positionen für kleine Anzahl von Bubbles."""
+        positions = []
+        spacing = radius * 7.5  # Abstand zwischen Bubbles (3x mehr Abstand)
+        
+        if num_bubbles == 1:
+            positions = [(center_x, center_y)]
+        elif num_bubbles == 2:
+            positions = [
+                (center_x - spacing//2, center_y),
+                (center_x + spacing//2, center_y)
+            ]
+        elif num_bubbles == 3:
+            positions = [
+                (center_x, center_y - spacing//2),
+                (center_x - spacing//2, center_y + spacing//2),
+                (center_x + spacing//2, center_y + spacing//2)
+            ]
+        elif num_bubbles == 4:
+            positions = [
+                (center_x - spacing//2, center_y - spacing//2),
+                (center_x + spacing//2, center_y - spacing//2),
+                (center_x - spacing//2, center_y + spacing//2),
+                (center_x + spacing//2, center_y + spacing//2)
+            ]
+        
+        return positions
+    
+    def _calculate_spiral_positions(self, num_bubbles, center_x, center_y, radius):
+        """Berechnet optimale Verteilung ohne Überlappungen."""
+        positions = []
+        min_distance = radius * 7.5  # Mindestabstand zwischen Bubbles (3x mehr Abstand)
+        
+        # Grid-basierte Verteilung mit Kollisionserkennung
+        grid_size = int(math.ceil(math.sqrt(num_bubbles * 2)))  # Größeres Grid für bessere Verteilung
+        cell_size = min_distance
+        
+        # Versuche Positionen zu finden
+        for i in range(num_bubbles):
+            attempts = 0
+            max_attempts = 100
+            
+            while attempts < max_attempts:
+                # Zufällige Position im Grid
+                if attempts < 20:
+                    # Erste 20 Versuche: Näher zur Mitte
+                    x = center_x + random.uniform(-cell_size * 2, cell_size * 2)
+                    y = center_y + random.uniform(-cell_size * 2, cell_size * 2)
+                else:
+                    # Spätere Versuche: Weiter weg
+                    distance = cell_size * (2 + attempts // 10)
+                    angle = random.uniform(0, 2 * math.pi)
+                    x = center_x + distance * math.cos(angle)
+                    y = center_y + distance * math.sin(angle)
+                
+                # Prüfe auf Überlappungen
+                overlap = False
+                for existing_x, existing_y in positions:
+                    if math.sqrt((x - existing_x)**2 + (y - existing_y)**2) < min_distance:
+                        overlap = True
+                        break
+                
+                if not overlap:
+                    positions.append((x, y))
+                    break
+                
+                attempts += 1
+            
+            # Falls keine Position gefunden, verwende Spiral-Fallback
+            if attempts >= max_attempts:
+                angle = i * 0.8
+                spiral_radius = (i // 6) * cell_size * 0.5 + cell_size
+                x = center_x + spiral_radius * math.cos(angle)
+                y = center_y + spiral_radius * math.sin(angle)
+                positions.append((x, y))
+        
+        return positions
