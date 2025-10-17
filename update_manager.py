@@ -105,17 +105,18 @@ class UpdateManager:
             return False
     
     def _update_via_git(self):
-        """Update über Git - EINFACHSTE Lösung die IMMER funktioniert."""
+        """Update über Git - ULTIMATIVE Lösung die IMMER funktioniert."""
         try:
-            # 1. Lösche problematische Dateien manuell
+            # 1. Lösche ALLE problematischen Dateien manuell
             import os
             import shutil
             
             # Lösche __pycache__ Verzeichnis komplett
             if os.path.exists('__pycache__'):
                 shutil.rmtree('__pycache__', ignore_errors=True)
+                print("Gelöscht: __pycache__ Verzeichnis")
             
-            # Lösche problematische Assets (werden vom Update überschrieben)
+            # Lösche problematische Assets
             problematic_files = [
                 'assets/glass_panel.png',
                 'assets/nebula_soft.png'
@@ -129,15 +130,20 @@ class UpdateManager:
                     except:
                         pass
             
-            # 2. Git fetch
+            # 2. Git stash um alle lokalen Änderungen zu entfernen
+            stash_result = subprocess.run(['git', 'stash', 'push', '-u', '-m', 'Auto-stash vor Update'], 
+                                        capture_output=True, text=True)
+            print("Git stash ausgeführt")
+            
+            # 3. Git fetch
             fetch_result = subprocess.run(['git', 'fetch', 'origin', 'main'], 
                                         capture_output=True, text=True)
             
-            # 3. Git reset --hard
+            # 4. Git reset --hard
             reset_result = subprocess.run(['git', 'reset', '--hard', 'origin/main'], 
                                         capture_output=True, text=True)
             
-            # 4. Git clean
+            # 5. Git clean
             clean_result = subprocess.run(['git', 'clean', '-fd'], 
                                         capture_output=True, text=True)
             
