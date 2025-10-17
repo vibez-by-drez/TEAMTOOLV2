@@ -25,7 +25,7 @@ from update_manager import UpdateManager
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Team Coworking Projekte")
+        self.title("Coworker v3")
         self.geometry("1296x900")
 
         # Konfiguration laden
@@ -107,7 +107,7 @@ class App(tk.Tk):
 
         title_frame = tk.Frame(top, bg=config.get_color(self.config_data, "surface_light", "#2a2a2a"))
         title_frame.pack(side="left", padx=20, pady=15)
-        self.title_label = tk.Label(title_frame, text="Team Coworking Projekte", font=("Helvetica", 16, "bold"), bg=config.get_color(self.config_data, "surface_light", "#2a2a2a"), fg="#000000")
+        self.title_label = tk.Label(title_frame, text="Coworker v3", font=("Helvetica", 16, "bold"), bg=config.get_color(self.config_data, "surface_light", "#2a2a2a"), fg="#000000")
         self.title_label.pack(side="left")
         self.status_label = tk.Label(title_frame, text="● Offline", font=("Helvetica", 10), bg=config.get_color(self.config_data, "surface_light", "#2a2a2a"), fg="#000000")
         self.status_label.pack(side="left", padx=(15, 0))
@@ -207,7 +207,7 @@ class App(tk.Tk):
         self.current_project_name = None
         
         # Titel zurücksetzen auf Standard
-        self.title_label.config(text="Team Coworking Projekte")
+        self.title_label.config(text="Coworker v3")
         
         # Projekt-Einstellungen Button entfernen
         self._remove_project_settings_button()
@@ -235,7 +235,7 @@ class App(tk.Tk):
         self.current_project_name = project.get("name", "Unbekanntes Projekt")
         
         # Titel aktualisieren um aktuelles Projekt anzuzeigen
-        self.title_label.config(text=f"Team Coworking Projekte - {self.current_project_name}")
+        self.title_label.config(text=f"Coworker v3 - {self.current_project_name}")
         
         # Projekt-Einstellungen Button hinzufügen
         self._add_project_settings_button()
@@ -298,7 +298,7 @@ class App(tk.Tk):
                 self.model.save_project(current_project)
                 
                 # Titel aktualisieren
-                self.title_label.config(text=f"Team Coworking Projekte - {name}")
+                self.title_label.config(text=f"Coworker v3 - {name}")
                 
                 # Projekte neu zeichnen (falls wir zurück zu Projekten gehen)
                 self._refresh_view()
