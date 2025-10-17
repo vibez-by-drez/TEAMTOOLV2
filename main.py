@@ -107,6 +107,20 @@ class App(tk.Tk):
         self.status_label = tk.Label(title_frame, text="● Offline", font=("Helvetica", 10), bg=config.get_color(self.config_data, "surface_light", "#2a2a2a"), fg="#000000")
         self.status_label.pack(side="left", padx=(15, 0))
 
+        # Zoom-Slider
+        zoom_frame = tk.Frame(top, bg=config.get_color(self.config_data, "surface_light", "#2a2a2a"))
+        zoom_frame.pack(side="right", padx=10, pady=15)
+        
+        tk.Label(zoom_frame, text="🔍", font=("Helvetica", 12), bg=config.get_color(self.config_data, "surface_light", "#2a2a2a"), fg="#000000").pack(side="left")
+        
+        self.zoom_var = tk.DoubleVar(value=1.0)
+        self.zoom_scale = tk.Scale(zoom_frame, from_=0.3, to=3.0, resolution=0.1, orient="horizontal", 
+                                 variable=self.zoom_var, command=self._on_zoom_change,
+                                 bg=config.get_color(self.config_data, "surface_light", "#2a2a2a"), 
+                                 fg="#000000", highlightthickness=0, length=100)
+        self.zoom_scale.pack(side="left", padx=(5, 0))
+        
+        
         btn_frame = tk.Frame(top, bg=config.get_color(self.config_data, "surface_light", "#2a2a2a"))
         btn_frame.pack(side="right", padx=20, pady=15)
         tk.Button(btn_frame, text="⚙️ Einstellungen", command=self.open_settings, bg="#333333", fg="#000000", font=("Helvetica", 10), relief="sunken", bd=2, padx=15, pady=8, activebackground="#444444", activeforeground="#000000").pack(side="right", padx=(5, 0))
@@ -290,6 +304,17 @@ class App(tk.Tk):
                         os.execv(sys.executable, [sys.executable] + sys.argv)
         except Exception as e:
             print(f"Update-Check beim Start fehlgeschlagen: {e}")
+    
+    def _on_zoom_change(self, value):
+        """Wird aufgerufen wenn der Zoom-Slider geändert wird."""
+        try:
+            zoom_level = float(value)
+            # Deaktiviere Auto-Zoom wenn Benutzer manuell zoomt
+            self.canvas.auto_zoom_enabled = False
+            self.canvas.set_zoom_level(zoom_level)
+        except (ValueError, AttributeError):
+            pass
+    
 
     def _update_radar(self):
         if self.config_data.get('ui', {}).get('enable_radar', False):
