@@ -105,42 +105,30 @@ class UpdateManager:
             return False
     
     def _update_via_git(self):
-        """Update über Git mit robuster Konflikt-Behandlung."""
+        """Update über Git mit ultimativer Konflikt-Lösung."""
         try:
-            # 1. Prüfe ob es lokale Änderungen gibt
-            status_result = subprocess.run(['git', 'status', '--porcelain'], 
-                                         capture_output=True, text=True)
+            # 1. IMMER zuerst fetch um sicherzustellen dass wir die neuesten Daten haben
+            fetch_result = subprocess.run(['git', 'fetch', 'origin', 'main'], 
+                                        capture_output=True, text=True)
             
-            if status_result.returncode == 0 and status_result.stdout.strip():
-                # Es gibt lokale Änderungen - verwende force reset
-                print("Lokale Änderungen gefunden - verwende force reset")
-                
-                # 2. Force reset zu origin/main (überschreibt lokale Änderungen)
-                reset_result = subprocess.run(['git', 'reset', '--hard', 'origin/main'], 
+            # 2. IMMER force reset - ignoriere alle lokalen Änderungen
+            print("Führe force reset durch - ignoriere alle lokalen Änderungen")
+            reset_result = subprocess.run(['git', 'reset', '--hard', 'origin/main'], 
+                                        capture_output=True, text=True)
+            
+            if reset_result.returncode == 0:
+                # 3. Clean um sicherzustellen dass alle unverfolgten Dateien entfernt werden
+                clean_result = subprocess.run(['git', 'clean', '-fd'], 
                                             capture_output=True, text=True)
                 
-                if reset_result.returncode == 0:
-                    messagebox.showinfo("Update Erfolgreich", 
-                                      "Die Anwendung wurde erfolgreich aktualisiert!\n"
-                                      "Lokale Änderungen wurden überschrieben.\n"
-                                      "Bitte starten Sie die Anwendung neu.")
-                    return True
-                else:
-                    messagebox.showerror("Git Update fehlgeschlagen", reset_result.stderr)
-                    return False
+                messagebox.showinfo("Update Erfolgreich", 
+                                  "Die Anwendung wurde erfolgreich aktualisiert!\n"
+                                  "Alle lokalen Änderungen wurden überschrieben.\n"
+                                  "Bitte starten Sie die Anwendung neu.")
+                return True
             else:
-                # Keine lokalen Änderungen - normaler pull
-                pull_result = subprocess.run(['git', 'pull', 'origin', 'main'], 
-                                           capture_output=True, text=True)
-                
-                if pull_result.returncode == 0:
-                    messagebox.showinfo("Update Erfolgreich", 
-                                      "Die Anwendung wurde erfolgreich aktualisiert!\n"
-                                      "Bitte starten Sie die Anwendung neu.")
-                    return True
-                else:
-                    messagebox.showerror("Git Update fehlgeschlagen", pull_result.stderr)
-                    return False
+                messagebox.showerror("Git Update fehlgeschlagen", reset_result.stderr)
+                return False
                 
         except Exception as e:
             messagebox.showerror("Update Fehler", f"Git Update fehlgeschlagen: {e}")
