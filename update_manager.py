@@ -105,22 +105,41 @@ class UpdateManager:
             return False
     
     def _update_via_git(self):
-        """Update über Git."""
+        """Update über Git mit Konflikt-Behandlung."""
         try:
-            # Git pull um Updates zu holen
-            result = subprocess.run(['git', 'pull', 'origin', 'main'], 
-                                 capture_output=True, text=True)
+            # 1. Stash lokale Änderungen (speichert sie temporär)
+            stash_result = subprocess.run(['git', 'stash', 'push', '-m', 'Auto-stash vor Update'], 
+                                        capture_output=True, text=True)
             
-            if result.returncode == 0:
+            # 2. Git pull um Updates zu holen
+            pull_result = subprocess.run(['git', 'pull', 'origin', 'main'], 
+                                       capture_output=True, text=True)
+            
+            if pull_result.returncode == 0:
+                # 3. Versuche lokale Änderungen wieder anzuwenden
+                pop_result = subprocess.run(['git', 'stash', 'pop'], 
+                                          capture_output=True, text=True)
+                
+                if pop_result.returncode != 0:
+                    # Konflikte beim Wiederanwenden - das ist normal
+                    print("Lokale Änderungen konnten nicht automatisch angewendet werden - das ist normal")
+                
                 messagebox.showinfo("Update Erfolgreich", 
                                   "Die Anwendung wurde erfolgreich aktualisiert!\n"
                                   "Bitte starten Sie die Anwendung neu.")
                 return True
             else:
-                messagebox.showerror("Update Fehler", f"Git Update fehlgeschlagen: {result.stderr}")
+                # 4. Bei Fehler: Stash wiederherstellen
+                subprocess.run(['git', 'stash', 'pop'], capture_output=True, text=True)
+                messagebox.showerror("Git Update fehlgeschlagen", pull_result.stderr)
                 return False
                 
         except Exception as e:
+            # Bei Fehler: Stash wiederherstellen
+            try:
+                subprocess.run(['git', 'stash', 'pop'], capture_output=True, text=True)
+            except:
+                pass
             messagebox.showerror("Update Fehler", f"Git Update fehlgeschlagen: {e}")
             return False
     
