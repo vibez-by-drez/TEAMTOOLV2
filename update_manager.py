@@ -105,56 +105,19 @@ class UpdateManager:
             return False
     
     def _update_via_git(self):
-        """Update über Git - Kompatibel mit alter UND neuer Logik."""
+        """Update über Git - Ursprüngliche einfache Logik."""
         try:
-            # 1. Lösche ALLE problematischen Dateien manuell
-            import os
-            import shutil
+            # Einfacher Git pull wie in der ursprünglichen Version
+            result = subprocess.run(['git', 'pull', 'origin', 'main'], 
+                                 capture_output=True, text=True)
             
-            # Lösche __pycache__ Verzeichnis komplett
-            if os.path.exists('__pycache__'):
-                shutil.rmtree('__pycache__', ignore_errors=True)
-                print("Gelöscht: __pycache__ Verzeichnis")
-            
-            # Lösche problematische Assets
-            problematic_files = [
-                'assets/glass_panel.png',
-                'assets/nebula_soft.png'
-            ]
-            
-            for file_path in problematic_files:
-                if os.path.exists(file_path):
-                    try:
-                        os.remove(file_path)
-                        print(f"Gelöscht: {file_path}")
-                    except:
-                        pass
-            
-            # 2. Git stash um alle lokalen Änderungen zu entfernen
-            stash_result = subprocess.run(['git', 'stash', 'push', '-u', '-m', 'Auto-stash vor Update'], 
-                                        capture_output=True, text=True)
-            print("Git stash ausgeführt")
-            
-            # 3. Git fetch
-            fetch_result = subprocess.run(['git', 'fetch', 'origin', 'main'], 
-                                        capture_output=True, text=True)
-            
-            # 4. Git reset --hard
-            reset_result = subprocess.run(['git', 'reset', '--hard', 'origin/main'], 
-                                        capture_output=True, text=True)
-            
-            # 5. Git clean
-            clean_result = subprocess.run(['git', 'clean', '-fd'], 
-                                        capture_output=True, text=True)
-            
-            if reset_result.returncode == 0:
+            if result.returncode == 0:
                 messagebox.showinfo("Update Erfolgreich", 
                                   "Die Anwendung wurde erfolgreich aktualisiert!\n"
-                                  "Alle problematischen Dateien wurden entfernt.\n"
                                   "Bitte starten Sie die Anwendung neu.")
                 return True
             else:
-                messagebox.showerror("Git Update fehlgeschlagen", reset_result.stderr)
+                messagebox.showerror("Update Fehler", f"Git Update fehlgeschlagen: {result.stderr}")
                 return False
                 
         except Exception as e:
