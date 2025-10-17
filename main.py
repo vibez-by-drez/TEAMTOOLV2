@@ -107,7 +107,8 @@ class App(tk.Tk):
 
         title_frame = tk.Frame(top, bg=config.get_color(self.config_data, "surface_light", "#2a2a2a"))
         title_frame.pack(side="left", padx=20, pady=15)
-        tk.Label(title_frame, text="Team Coworking Projekte", font=("Helvetica", 16, "bold"), bg=config.get_color(self.config_data, "surface_light", "#2a2a2a"), fg="#000000").pack(side="left")
+        self.title_label = tk.Label(title_frame, text="Team Coworking Projekte", font=("Helvetica", 16, "bold"), bg=config.get_color(self.config_data, "surface_light", "#2a2a2a"), fg="#000000")
+        self.title_label.pack(side="left")
         self.status_label = tk.Label(title_frame, text="● Offline", font=("Helvetica", 10), bg=config.get_color(self.config_data, "surface_light", "#2a2a2a"), fg="#000000")
         self.status_label.pack(side="left", padx=(15, 0))
 
@@ -199,6 +200,11 @@ class App(tk.Tk):
     def show_projects(self):
         self.mode = "projects"
         self.current_project_id = None
+        self.current_project_name = None
+        
+        # Titel zurücksetzen auf Standard
+        self.title_label.config(text="Team Coworking Projekte")
+        
         self.legend.pack_forget()
         if self.config_data.get('ui', {}).get('enable_radar', False):
             self.radar.place(relx=0.98, rely=0.02, anchor="ne")
@@ -212,6 +218,11 @@ class App(tk.Tk):
     def on_project_clicked(self, project):
         self.mode = "tasks"
         self.current_project_id = project["project_id"]
+        self.current_project_name = project.get("name", "Unbekanntes Projekt")
+        
+        # Titel aktualisieren um aktuelles Projekt anzuzeigen
+        self.title_label.config(text=f"Team Coworking Projekte - {self.current_project_name}")
+        
         self.legend.pack(side="bottom", fill="x", padx=10, pady=(0, 10))
         if self.config_data.get('ui', {}).get('enable_radar', False):
             self.radar.place(relx=0.98, rely=0.02, anchor="ne")
