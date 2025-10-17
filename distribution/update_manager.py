@@ -162,7 +162,7 @@ class UpdateManager:
                                       "• Multi-Assignee System\n"
                                       "• Asteroiden-Animationen\n"
                                       "• Automatische Updates\n"
-                                      "• TESTTESTTEST\n\n"
+                                      "• TESTTESTTEST - FUNKTIONIERT!\n\n"
                                       "Möchten Sie die Anwendung jetzt aktualisieren?")
             if result:
                 return self.update_application()
