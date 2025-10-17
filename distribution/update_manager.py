@@ -130,8 +130,8 @@ class UpdateManager:
                     except:
                         pass
             
-            # 2. FORCE RESET - ignoriere alle lokalen Änderungen
-            print("Führe FORCE RESET durch - ignoriere alle lokalen Änderungen")
+            # 2. Git ignore diese Dateien komplett
+            print("Ignoriere problematische Dateien komplett")
             
             # 3. Git fetch
             fetch_result = subprocess.run(['git', 'fetch', 'origin', 'main'], 
@@ -145,10 +145,14 @@ class UpdateManager:
             clean_result = subprocess.run(['git', 'clean', '-fd'], 
                                         capture_output=True, text=True)
             
+            # 6. Stelle sicher dass .gitignore aktiv ist
+            subprocess.run(['git', 'add', '.gitignore'], capture_output=True)
+            subprocess.run(['git', 'commit', '-m', 'Update .gitignore'], capture_output=True)
+            
             if reset_result.returncode == 0:
                 messagebox.showinfo("Update Erfolgreich", 
                                   "Die Anwendung wurde erfolgreich aktualisiert!\n"
-                                  "Alle lokalen Änderungen wurden überschrieben.\n"
+                                  "Alle problematischen Dateien werden ignoriert.\n"
                                   "Bitte starten Sie die Anwendung neu.")
                 return True
             else:
