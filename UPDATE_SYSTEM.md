@@ -25,8 +25,8 @@ Das Coworking Tool verfügt über ein integriertes Update-System, das automatisc
 
 ### Schritt 1: Repository klonen
 ```bash
-git clone <repository-url>
-cd coworking-tool
+git clone https://github.com/vibez-by-drez/TEAMTOOLV2.git
+cd TEAMTOOLV2
 ```
 
 ### Schritt 2: Update-Script ausführbar machen

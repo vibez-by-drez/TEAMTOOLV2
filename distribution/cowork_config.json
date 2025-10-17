@@ -1,0 +1,21 @@
+{
+  "sheet_id": "1VqgfgkCZBvCVrZ9YrQl38i03rSbUgMot-BlT5pdj-PI",
+  "service_account_json": "/Users/drezmusic/Desktop/COWORKING_TOOL/sheet-automation-430618-a5ee188da7b9.json",
+  "current_user": "Drez",
+  "poll_seconds": 30,
+  "ui": {
+    "enable_galaxy_bg": true,
+    "enable_deadline_halo": true,
+    "enable_progress_ring": true,
+    "enable_radar": false,
+    "enable_focus_mode": false,
+    "animation_fps": 30,
+    "neon_intensity": 0.7,
+    "blur_level": 0.5,
+    "theme": "dark",
+    "theme_mode": "bright",
+    "enable_tooltips": true,
+    "floating_speed": 0.2,
+    "enable_floating_animation": true
+  }
+}
